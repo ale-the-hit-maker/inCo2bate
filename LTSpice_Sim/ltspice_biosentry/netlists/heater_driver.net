@@ -1,0 +1,72 @@
+* ============================================================
+* BioSentry IncuSense — Heater Driver Circuit
+* Revisione: 2025-06 (v2.0 — alimentazione 12V via cavo)
+* Ref: Della Ciana 2021, Fig. 3 + BioSentry System PDF §2.4
+* ============================================================
+* Topologia: PWM low-side switch (Si2302ADS) per heater Pt
+* Due regimi: Supply (M1 ON, Q1 PWM) e Measurement (M1 OFF, Q1 ON)
+* R_heater modellato come PTC Pt: R(T) = R0*(1 + alpha*T)
+* ============================================================
+
+* --- Alimentazione principale ---
+V_12V V12V_PROT 0 12
+
+* --- Segnale GPIO (controllo M1): alto in supply, basso in measurement ---
+* Alterno supply (0-9ms) e measurement (9-10ms) in cicli di 10ms
+V_GPIO GPIO_M1 0 PULSE(0 3.3 0 1u 1u 9m 10m)
+
+* --- Segnale PWM (controllo Q1): 1kHz, duty 10% in supply ---
+* In measurement mode, Q1 deve restare ON (gestito in post-processing)
+V_PWM PWM_IN 0 PULSE(0 3.3 0 1u 1u 100u 1m)
+
+* --- Heater Pt (R0=10 Ohm a RT, PTC) ---
+* Modellato come R fisso per analisi AC/transitorio iniziale
+* In simulazione parametrica si varierà il valore
+.param Rheater=10
+R_HEATER V12V_PROT HEAT_MINUS {Rheater}
+
+* --- M1: Si2302ADS N-ch MOSFET (low-side switch per heater) ---
+* Modello semplificato con MOSFET standard LTSpice
+* Gate=GPIO via R_GATE, Drain=HEAT_MINUS, Source=GND
+R_GATE GPIO_M1 M1_GATE 100
+M1 HEAT_MINUS M1_GATE 0 0 NMOS_SI2302 W=1 L=1u
+.model NMOS_SI2302 NMOS(VTO=0.4 KP=5 RD=0.06 RS=0.06 CBD=50p CGS=200p CGD=30p)
+
+* --- Q1: NPN transistor per modulazione PWM ---
+* Collettore connesso al nodo tra heater e M1 drain
+* In supply mode: Q1 ON bypassa Rref
+* In measurement mode: Q1 sempre ON, corrente va in Rref
+R_BASE PWM_IN Q1_BASE 1k
+Q1 HEAT_MINUS Q1_BASE Q1_EMITTER NPN_2N2222
+.model NPN_2N2222 NPN(BF=200 IS=1e-14 VAF=100 CJC=8p CJE=25p TF=0.4n)
+
+* --- Rref: resistenza di riferimento calibrata ---
+.param Rref=100
+R_REF Q1_EMITTER 0 {Rref}
+
+* --- Nodi di misura per gli amplificatori differenziali ---
+* ADC Ch.1: tensione ai capi del heater = V(V12V_PROT) - V(HEAT_MINUS)
+* ADC Ch.2: tensione ai capi di Rref = V(Q1_EMITTER) - V(0)
+* (In LTSpice si misurano come V(V12V_PROT,HEAT_MINUS) e V(Q1_EMITTER))
+
+* --- Condensatore di bulk sul rail 12V ---
+C_IN V12V_PROT 0 100u IC=12
+
+* --- Direttive di simulazione ---
+* Transitorio: 50ms per osservare diversi cicli supply/measurement
+.tran 0 50m 0 1u
+
+* --- Analisi parametrica: variazione R_heater con temperatura ---
+* R(250C) = R0 * (1 + 0.0032*250) = 10 * 1.8 = 18 Ohm
+* R(450C) = R0 * (1 + 0.0032*450) = 10 * 2.44 = 24.4 Ohm
+.step param Rheater list 10 14 18 22 24.4
+
+* --- Misure automatiche ---
+.meas TRAN I_heater_avg AVG I(R_HEATER) FROM=0m TO=9m
+.meas TRAN V_heater_supply AVG V(V12V_PROT,HEAT_MINUS) FROM=1m TO=9m
+.meas TRAN V_rref_meas AVG V(Q1_EMITTER) FROM=9m TO=10m
+.meas TRAN P_heater_avg AVG (-V(V12V_PROT,HEAT_MINUS)*I(R_HEATER)) FROM=0 TO=10m
+.meas TRAN t_transition FIND time WHEN V(GPIO_M1)=1.65 RISE=1
+
+.backanno
+.end

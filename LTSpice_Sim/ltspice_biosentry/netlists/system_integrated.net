@@ -1,0 +1,117 @@
+* ============================================================
+* BioSentry IncuSense — SISTEMA INTEGRATO (Cross-Interference)
+* Revisione: 2025-06 (v2.0)
+* ============================================================
+* Tutti i sottocircuiti condividono i rail V12V_PROT, V5V, V3V3.
+* Scopo: verificare che il ripple sul rail 3.3V generato da:
+*   (1) heater PWM 1kHz sul 12V
+*   (2) ventola PWM 25kHz sul 5V
+*   (3) burst Ethernet W5500 sul 3.3V
+* non corrompa la lettura del TIA (nA-level sul sensore MOx)
+* ============================================================
+
+* =================== ALIMENTAZIONE ===================
+V_12V V12V_SRC 0 12
+R_SRC V12V_SRC V12V_RAW 0.5
+R_POLYFUSE V12V_RAW V12V_PROT 1
+C_IN_BULK V12V_PROT 0 100u IC=12 Rser=0.05
+
+* --- Buck 12V -> 5V (modello comportamentale) ---
+B_BUCK_REG V5V_IDEAL 0 V=5.0
+R_BUCK V5V_IDEAL V5V 0.15
+L_BUCK V5V V5V_OUT 4.7u Rser=0.08
+C_BUCK_OUT V5V_OUT 0 10u IC=5 Rser=0.01
+
+* --- LDO 5V -> 3.3V ---
+B_LDO V3V3_IDEAL 0 V=3.3
+R_LDO V3V3_IDEAL V3V3 0.05
+C6 V3V3 0 10u IC=3.3 Rser=0.01
+C7 V3V3 0 100n
+C8 V3V3 0 470u IC=3.3 Rser=0.08
+
+* =================== HEATER (su rail 12V) ===================
+* PWM 1kHz, duty 10%
+V_HTR_PWM HTR_GATE_SIG 0 PULSE(0 3.3 8m 100n 100n 100u 1m)
+R_HTR_GATE HTR_GATE_SIG HTR_G 100
+M_HTR HTR_D HTR_G 0 0 NMOS_SI2302 W=1 L=1u
+R_HEATER V12V_PROT HTR_D 10
+
+* =================== VENTOLA (su rail 5V) ===================
+* PWM 25kHz, duty 50%
+V_FAN_PWM FAN_GATE_SIG 0 PULSE(0 3.3 5m 100n 100n 20u 40u)
+R_FAN_GATE FAN_GATE_SIG FAN_G 100
+M_FAN FAN_D FAN_G 0 0 NMOS_SI2302 W=1 L=1u
+R_FAN_MOTOR V5V_OUT FAN_MID 20
+L_FAN_MOTOR FAN_MID FAN_D 1m
+D_FAN_FLYBACK 0 V5V_OUT D_SCHOTTKY
+C1_FAN V5V_OUT 0 100n
+C2_FAN V5V_OUT 0 10u IC=5 Rser=0.02
+
+* =================== W5500 ETHERNET (su rail 3.3V) ===================
+* Burst TX: 130mA per 2ms ogni 30ms
+I_W5500_IDLE V3V3 0 30m
+I_W5500_BURST V3V3 0 PULSE(0 100m 15m 50u 50u 2m 30m)
+
+* =================== ESP32 (su rail 3.3V) ===================
+I_ESP32 V3V3 0 80m
+
+* =================== TIA SENSORE (su rail 3.3V) ===================
+* MCP6001 alimentato da V3V3 via power switch
+* Simulato come op-amp ideale con parametri reali
+
+* Power switch AO3401 P-ch (sempre ON in questo test)
+R_PSWITCH V3V3 OPA_VCC 0.05
+C_OPA_BYP OPA_VCC 0 100n
+
+* Sensore MOx: Rs = 80k (5% CO2 a 250°C)
+V_BIAS_5V ELEC_A_SRC 0 5
+R_BIAS_JUMPER ELEC_A_SRC ELEC_A 0.001
+R_SENSOR ELEC_A ELEC_B 80k
+C_PARASITIC ELEC_B 0 30p
+
+* Op-amp MCP6001 (modello comportamentale semplificato)
+* IN+ = 0 (GND), IN- = ELEC_B
+* Aol=100dB, GBW=1MHz
+G_OA_INT 0 OA_NODE ELEC_B 0 -100k
+R_OA_INT OA_NODE 0 1
+C_OA_INT OA_NODE 0 15.9u
+E_OA_OUT TIA_RAW 0 OA_NODE 0 1
+R_OA_OUT TIA_RAW TIA_OUT 50
+
+* Clamp rail-to-rail
+D_CLH TIA_OUT OPA_VCC D_CLAMP_M
+D_CLL 0 TIA_OUT D_CLAMP_M
+.model D_CLAMP_M D(IS=1e-12 RS=10)
+
+* Feedback network
+R_F ELEC_B TIA_OUT 22k
+C_F ELEC_B TIA_OUT 10p
+
+* ADC protection
+R_ADCPROT TIA_OUT ADC_OUT 1k
+C_ADC ADC_OUT 0 100p
+
+* =================== MODELLI ===================
+.model NMOS_SI2302 NMOS(VTO=0.4 KP=5 RD=0.06 RS=0.06 CBD=50p CGS=200p CGD=30p)
+.model D_SCHOTTKY D(IS=5.4e-6 N=1.3 RS=0.04 BV=40 CJO=110p VJ=0.34 M=0.4 TT=5n)
+
+* =================== SIMULAZIONE ===================
+.tran 0 80m 0 0.5u
+
+* =================== MISURE CROSS-INTERFERENCE ===================
+* Ripple sul nodo ADC_OUT causato dai vari sottosistemi
+.meas TRAN V_ADC_avg AVG V(ADC_OUT) FROM=20m TO=80m
+.meas TRAN V_ADC_ripple PP V(ADC_OUT) FROM=20m TO=80m
+.meas TRAN V_ADC_noise RMS V(ADC_OUT) FROM=20m TO=80m
+
+* Ripple sui rail
+.meas TRAN V3V3_ripple_sys PP V(V3V3) FROM=20m TO=80m
+.meas TRAN V5V_ripple_sys PP V(V5V_OUT) FROM=20m TO=80m
+.meas TRAN V12V_ripple_sys PP V(V12V_PROT) FROM=20m TO=80m
+
+* Corrente media dal sorgente 12V
+.meas TRAN I_total_avg AVG I(V_12V) FROM=20m TO=80m
+.meas TRAN P_total_avg AVG (12*I(V_12V)) FROM=20m TO=80m
+
+.backanno
+.end
