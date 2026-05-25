@@ -1,0 +1,122 @@
+* ============================================================
+* BioSentry IncuSense v2.1 — ESP32-C3-MINI-1 MCU Model
+* Ref: BioSentry PDF §2.7 (pin mapping Ethernet version)
+* ============================================================
+*
+* Modello elettrico dell'MCU come interfaccia hardware:
+*   - Consumo di corrente (5V in, 3.3V regolato interno)
+*   - GPIO output: PWM heater (1kHz), PWM fan (25kHz), SPI, I2C
+*   - GPIO input: ADC (TIA_OUT), ADC (V_MON)
+*   - Sequenza di boot e avviamento carichi sfalsato
+*
+* Pin mapping (da BioSentry PDF §2.7):
+*   GPIO0  = ADC1_CH0  → TIA_OUT (lettura sensore MOx)
+*   GPIO1  = PWM       → Ventola (25kHz)
+*   GPIO2  = PWM       → Heater (1kHz)
+*   GPIO4  = SPI_SCK   → W5500 (via R_SCK 33Ω)
+*   GPIO5  = SPI_CS    → W5500
+*   GPIO6  = SPI_MISO  ← W5500
+*   GPIO7  = SPI_MOSI  → W5500 (via R_MOSI 33Ω)
+*   GPIO8  = I2C_SDA   → SHT41 (pull-up 4.7kΩ)
+*   GPIO9  = I2C_SCL   → SHT41 (pull-up 4.7kΩ)
+*   GPIO20 = UART_TX   → J2 debug
+*   GPIO21 = UART_RX   ← J2 debug
+* ============================================================
+
+* --- Alimentazione MCU ---
+* La devboard riceve 5V e ha un regolatore interno che genera 3.3V
+* Modello: corrente costante da V5V + burst transitori
+.param I_idle=20m
+.param I_active=80m
+
+* === CONSUMO DI POTENZA ===
+* Corrente base (CPU idle, no WiFi): 20mA da 3.3V interno → ~13mA da 5V
+* Corrente attiva (CPU full): 80mA da 3.3V → ~53mA da 5V
+* Boot-up surge: 160mA per 50ms all'avvio (regolatore interno)
+R_ESP_5V V5V_IN ESP_INT 0.5
+C_ESP_DECOUPLE ESP_INT 0 10u IC=5
+I_ESP_BASE ESP_INT 0 {I_idle}
+* Burst: attività SPI ogni 30ms (2ms burst a 40mA extra)
+I_ESP_SPI ESP_INT 0 PULSE(0 40m 2s 50u 50u 2m 30m)
+* Boot surge (una tantum)
+I_ESP_BOOT ESP_INT 0 PULSE(0 100m 0 1m 50m 50m 1000)
+
+* Decoupling locale (sulla devboard)
+C_ESP_3V3A ESP_INT 0 100n
+C_ESP_3V3B ESP_INT 0 10u IC=5
+
+* Regolatore interno 5V→3.3V (modello semplificato)
+* Non serve per la simulazione esterna, ma modella il carico visto dal 5V
+B_REG_INT V3V3_INT 0 V=IF(V(ESP_INT)>3.5, 3.3, V(ESP_INT)-0.2)
+R_REG_OUT V3V3_INT V3V3_ESP 0.1
+
+* === GPIO OUTPUTS (sorgenti di segnale per i sottocircuiti) ===
+
+* --- GPIO2: PWM Heater (1kHz, duty variabile) ---
+* Sequenza avviamento: OFF per 8s, poi duty 3%→10% (PID)
+* Qui simuliamo regime stazionario: duty=10%
+.param heater_duty=0.10
+V_GPIO2_HTR GPIO2_HEATER 0 PULSE(0 3.3 8m 100n 100n {heater_duty/1k} {1/1k})
+
+* --- GPIO1: PWM Ventola (25kHz, duty variabile) ---
+* Avvio dopo 5s, soft-start 20%→50%
+.param fan_duty=0.50
+V_GPIO1_FAN GPIO1_FAN 0 PULSE(0 3.3 5m 100n 100n {fan_duty/25k} {1/25k})
+
+* --- GPIO4: SPI SCK (10MHz clock, burst 2ms ogni 30ms) ---
+* Attivo solo durante comunicazione W5500
+V_SPI_CLK_EN SPI_EN 0 PULSE(0 1 2s 10u 10u 2m 30m)
+B_GPIO4_SCK GPIO4_SCK 0 V=IF(V(SPI_EN)>0.5, 1.65+1.65*SIN(2*3.14159*10MEG*TIME), 0)
+R_GPIO4_OUT GPIO4_SCK GPIO4_SCK_OUT 10
+
+* --- GPIO5: SPI CS (attivo basso durante burst) ---
+B_GPIO5_CS GPIO5_CS 0 V=IF(V(SPI_EN)>0.5, 0, 3.3)
+
+* --- GPIO7: SPI MOSI (dati, approssimato come rumore digitale) ---
+B_GPIO7_MOSI GPIO7_MOSI 0 V=IF(V(SPI_EN)>0.5, 1.65+1.65*SIN(2*3.14159*5MEG*TIME), 0)
+R_GPIO7_OUT GPIO7_MOSI GPIO7_MOSI_OUT 10
+
+* === GPIO INPUTS (modello impedenza ADC) ===
+
+* --- GPIO0: ADC input per TIA_OUT ---
+* Impedenza di ingresso ADC ESP32-C3: ~13MΩ // 5pF (typ.)
+* Campionamento: sample-and-hold ogni ~12.5us (80kSPS)
+R_ADC0_IN GPIO0_ADC 0 13MEG
+C_ADC0_IN GPIO0_ADC 0 5p
+
+* --- GPIO5_ADC: ADC input per V_MON (monitoraggio 12V) ---
+* Nota: nella versione Ethernet, GPIO5 è CS per SPI
+* Il monitoraggio 12V usa un GPIO diverso o è multiplexato
+* Qui modelliamo come carico generico ADC
+R_ADC_VMON GPIO_VMON_ADC 0 13MEG
+C_ADC_VMON GPIO_VMON_ADC 0 5p
+
+* === BUS I2C (GPIO8 SDA, GPIO9 SCL) ===
+* Pull-up 4.7kΩ a V3V3
+* Attività: burst di lettura SHT41 ogni 1s (durata ~15ms)
+R_PU_SDA V3V3_ESP I2C_SDA 4.7k
+R_PU_SCL V3V3_ESP I2C_SCL 4.7k
+* Switching I2C modellato come carico capacitivo
+C_I2C_SDA I2C_SDA 0 30p
+C_I2C_SCL I2C_SCL 0 30p
+
+* === BOOT / RESET ===
+* Pull-up BOOT pin
+R_BOOT V3V3_ESP BOOT_PIN 10k
+* EN pin tied to V3V3
+R_EN V3V3_ESP EN_PIN 0.001
+
+* === SIMULAZIONE (standalone test MCU) ===
+* Alimentazione 5V stabile
+V_5V_TEST V5V_IN 0 5
+V_3V3_TEST V3V3_ESP 0 3.3
+.tran 0 100m 0 1u
+
+* === MISURE ===
+.meas TRAN I_5V_avg AVG I(V_5V_TEST) FROM=10m TO=100m
+.meas TRAN I_5V_peak MAX I(V_5V_TEST) FROM=0 TO=100m
+.meas TRAN V_gpio2_avg AVG V(GPIO2_HEATER) FROM=10m TO=100m
+.meas TRAN V_gpio1_avg AVG V(GPIO1_FAN) FROM=10m TO=100m
+
+.backanno
+.end

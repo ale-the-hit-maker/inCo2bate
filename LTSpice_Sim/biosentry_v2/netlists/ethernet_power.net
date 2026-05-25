@@ -1,0 +1,128 @@
+* ============================================================
+* BioSentry IncuSense — Modulo Alimentazione + Connessione Ethernet
+* Revisione: 2025-06 (v2.0)
+* Ref: BioSentry System PDF §2.7, §2.8
+* ============================================================
+* Catena: 12V_IN -> TVS -> Polyfuse -> Buck 12->5V -> LDO 5->3.3V
+* Carichi: ESP32 (80mA), W5500 (130mA burst), op-amp (0.1mA)
+* Heater su rail 12V separato (impulsi PWM)
+* ============================================================
+
+* --- Sorgente 12V DC (PoE splitter output) ---
+* Con ripple residuo di commutazione dello splitter
+V_12V_DC V12V_RAW_IDEAL 0 12
+V_RIPPLE V12V_RAW_RIPPLE 0 SIN(0 0.1 50k)
+R_SOURCE V12V_RAW_IDEAL V12V_RAW_PRE 0.5
+E_12V_SRC V12V_RAW V12V_RAW_PRE V12V_RAW_RIPPLE 0 1
+
+* --- TVS Diodo SMBJ12A (bidirezionale, clamp a ~16V) ---
+* Modello semplificato: 2 diodi Zener back-to-back
+D_TVS_FW V12V_RAW 0 D_TVS
+D_TVS_RV 0 V12V_RAW D_TVS
+.model D_TVS D(IS=1e-12 N=1 BV=13.3 IBV=1m RS=0.5 CJO=600p)
+
+* --- Polyfuse Bourns MF-MSMF050 ---
+* Modello: R=1 Ohm cold (semplificato, senza modello termico)
+R_POLYFUSE V12V_RAW V12V_PROT 1
+
+* --- Condensatore di bulk ingresso ---
+C_IN V12V_PROT 0 100u IC=12 Rser=0.05
+
+* === BUCK CONVERTER AP63203 (modello comportamentale) ===
+* Modello switching semplificato: interruttore + induttore + diodo
+* fsw = 1.5MHz
+
+* Oscillatore interno
+V_CLK CLK_NODE 0 PULSE(0 1 0 10n 10n {0.42/1.5MEG} {1/1.5MEG})
+
+* Comparatore duty cycle (feedback loop semplificato)
+* Il duty cycle si autoregolerà per dare 5V in uscita
+* Approccio: behavioral voltage source con regolazione
+B_BUCK V5V 0 V=IF(V(V12V_PROT)>6, 5.0*(1-0.002*(I(R_LOAD_ESP)-0.08)), 0)
+R_BUCK_SER V5V V5V_NODE 0.15
+L_BUCK V5V_NODE V5V_OUT 4.7u Rser=0.08
+C_BUCK_OUT V5V_OUT 0 10u IC=5 Rser=0.01
+
+* --- Partitore di retroazione (per monitoraggio, non in loop) ---
+R_U9A V5V_OUT FB_NODE 82k
+R_U9B FB_NODE 0 27.4k
+
+* --- Condensatore ingresso buck ---
+C11_BUCK V12V_PROT 0 10u Rser=0.01
+
+* === LDO AP2112K-3.3 (modello comportamentale) ===
+* Dropout: 250mV, Imax=600mA
+* Modello: E-source con clamp e dropout
+B_LDO V3V3_PRE 0 V=IF(V(V5V_OUT)>3.55, 3.3, V(V5V_OUT)-0.25)
+R_LDO_OUT V3V3_PRE V3V3 0.05
+
+* --- Rete decoupling LDO uscita ---
+C6_LDO V3V3 0 10u IC=3.3 Rser=0.01
+C7_LDO V3V3 0 100n
+C8_BULK V3V3 0 470u IC=3.3 Rser=0.08
+
+* --- Condensatore decoupling LDO ingresso ---
+C5_LDO_IN V5V_OUT 0 10u Rser=0.01
+
+* === CARICHI SUL RAIL 3.3V ===
+
+* --- ESP32-C3 (modello: corrente costante 80mA + burst WiFi) ---
+* Burst WiFi: 160mA per 5ms ogni 100ms
+I_ESP32_DC V3V3 0 80m
+I_ESP32_BURST V3V3 0 PULSE(0 80m 10m 100u 100u 5m 100m)
+
+* --- W5500 Ethernet (modello: 30mA idle + 130mA TX burst) ---
+* TX burst: 130mA per 2ms ogni 30ms
+I_W5500_IDLE V3V3 0 30m
+I_W5500_BURST V3V3 0 PULSE(0 100m 15m 50u 50u 2m 30m)
+
+* --- MCP6001 op-amp (0.1mA, trascurabile) ---
+R_LOAD_OPA V3V3 0 33k
+
+* === CARICHI SUL RAIL 5V ===
+
+* --- Partitore bias TIA: 40k/10k da V5V → Vin=1.0V (v2.1) ---
+* Corrente stazionaria: 5V/50k = 100uA
+R_DIV_A V5V_OUT VIN_BIAS 40k
+R_DIV_B VIN_BIAS 0 10k
+C_VIN_BYP VIN_BIAS 0 100n
+* Carico TIA: corrente sensore ~Vin/Rs = 1V/80k = 12.5uA (trascurabile)
+R_LOAD_SENSOR VIN_BIAS 0 80k
+
+* --- Carico equivalente ESP32 devboard (da 5V a regolatore interno) ---
+R_LOAD_ESP V5V_OUT 0 62.5
+
+* === CARICO SUL RAIL 12V (HEATER PWM) ===
+* Heater: impulsi a 1kHz, duty 10%, Imax=1.2A (cold), Iavg=68mA
+
+* Modello semplificato con switch ideale e R_heater
+.param Rh=10
+V_HEATER_PWM HTR_GATE 0 PULSE(0 12 8m 100n 100n 100u 1m)
+S_HEATER V12V_PROT HTR_DRAIN HTR_GATE 0 SW_IDEAL
+R_HEATER_LOAD HTR_DRAIN 0 {Rh}
+.model SW_IDEAL SW(VT=6 VH=0.5 RON=0.12 ROFF=10MEG)
+
+* === MONITORAGGIO TENSIONE 12V (divisore) ===
+R_VD1 V12V_PROT V_MON 100k
+R_VD2 V_MON 0 22k
+R_ADCV V_MON GPIO5_ADC 1k
+C_MON GPIO5_ADC 0 100p
+
+* --- Direttive di simulazione ---
+.tran 0 120m 0 1u
+
+* --- Misure automatiche ---
+.meas TRAN V5V_avg AVG V(V5V_OUT) FROM=20m TO=120m
+.meas TRAN V3V3_avg AVG V(V3V3) FROM=20m TO=120m
+.meas TRAN V3V3_ripple PP V(V3V3) FROM=50m TO=120m
+.meas TRAN V5V_ripple PP V(V5V_OUT) FROM=50m TO=120m
+.meas TRAN V12V_ripple PP V(V12V_PROT) FROM=50m TO=120m
+.meas TRAN V3V3_drop_w5500 MIN V(V3V3) FROM=15m TO=20m
+.meas TRAN I_12V_avg AVG I(V_12V_DC) FROM=20m TO=120m
+.meas TRAN V_mon_avg AVG V(GPIO5_ADC) FROM=50m TO=120m
+
+* --- Analisi parametrica: cold start heater ---
+.step param Rh list 10 14 18
+
+.backanno
+.end

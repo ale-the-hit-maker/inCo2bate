@@ -1,0 +1,175 @@
+* ================================================================
+* BioSentry IncuSense v2.1 — SISTEMA INTEGRATO FINALE
+* Include: Alimentazione + Heater + TIA(Vin=1V) + Fan + ESP32 + SPI
+* ================================================================
+* Scopo: verifica cross-interference completa con tutti i
+* sottosistemi attivi simultaneamente sui rail condivisi.
+* Aggiornamenti v2.1:
+*   - Vin=1V via partitore 40k/10k (non più 5V diretto)
+*   - Cf=22pF (corretto da 10pF per stabilità)
+*   - LC filter su alimentazione op-amp per ridurre noise
+*   - Modello ESP32 con consumo realistico e GPIO attivi
+* ================================================================
+
+* ==================== 1. ALIMENTAZIONE ====================
+
+* --- Sorgente 12V (PoE splitter con ripple residuo) ---
+V_12V V12V_SRC 0 12
+R_SRC V12V_SRC V12V_RAW 0.3
+
+* --- Protezione: TVS + Polyfuse ---
+D_TVS V12V_RAW 0 D_TVS_MDL
+.model D_TVS_MDL D(IS=1e-12 BV=13.3 IBV=1m RS=0.5 CJO=600p)
+R_POLYFUSE V12V_RAW V12V_PROT 1
+C_IN_BULK V12V_PROT 0 100u IC=12 Rser=0.05
+
+* --- Buck 12V→5V (AP63203 comportamentale) ---
+B_BUCK V5V_PRE 0 V=IF(V(V12V_PROT)>6, 5.0, 0)
+R_BUCK_S V5V_PRE V5V_SW 0.15
+L_BUCK V5V_SW V5V 4.7u Rser=0.08
+C11 V12V_PROT 0 10u Rser=0.01
+C12 V5V 0 10u IC=5 Rser=0.01
+
+* --- LDO 5V→3.3V (AP2112K comportamentale) ---
+B_LDO V3V3_PRE 0 V=IF(V(V5V)>3.55, 3.3, V(V5V)-0.25)
+R_LDO V3V3_PRE V3V3 0.05
+C6 V3V3 0 10u IC=3.3 Rser=0.01
+C7 V3V3 0 100n
+C8 V3V3 0 470u IC=3.3 Rser=0.08
+
+* ==================== 2. HEATER DRIVER ====================
+* Topologia: Si2302ADS N-ch low-side, PWM 1kHz, duty 10%
+* Heat+ collegato direttamente a V12V_PROT (via R_HBIAS 0Ω)
+
+.param Rheater=18
+R_HBIAS V12V_PROT HEAT_PLUS 0.001
+R_HEATER HEAT_PLUS HEAT_MINUS {Rheater}
+R_GATE_H GPIO2_HTR M1_GATE 100
+M_M1 HEAT_MINUS M1_GATE 0 0 NMOS_SI W=1 L=1u
+
+* Segnale PWM heater dal GPIO2 dell'ESP32
+* Boot: OFF per 8ms, poi duty 10%
+V_GPIO2 GPIO2_HTR 0 PULSE(0 3.3 8m 100n 100n 100u 1m)
+
+* ==================== 3. TIA SENSORE (Vin=1V) ====================
+* IN+ = Vin_bias = 1.0V (partitore 40k/10k da V5V)
+* IN- = ELEC_B (sensore a GND)
+* Rf = 22kΩ, Cf = 22pF (stabile, margine ×1.5)
+
+* --- Partitore bias 1V ---
+R_DIV_A V5V VIN_BIAS 40k
+R_DIV_B VIN_BIAS 0 10k
+C_VIN_BYP VIN_BIAS 0 100n
+
+* --- Sensore MOx (Rs=80kΩ @ 5% CO2, 250°C) ---
+.param Rs=80k
+R_SENSOR ELEC_B 0 {Rs}
+C_PARA ELEC_B 0 30p
+
+* --- LC FILTER su alimentazione op-amp (NUOVO v2.1) ---
+* Ferrite bead (modello: L=1µH + R=100Ω @100MHz) + C=10µF
+* Questo isola il MCP6001 dal rumore di V3V3
+L_FERRITE V3V3 V3V3_CLEAN 1u Rser=1
+C_FERRITE V3V3_CLEAN 0 10u Rser=0.01
+
+* --- Power switch AO3401 P-ch (sempre ON in questo test) ---
+* GPIO4 = 0V → P-ch ON
+V_GPIO4 GPIO4_OPA_EN 0 0
+M_Q1 OPA_VCC GPIO4_OPA_EN V3V3_CLEAN V3V3_CLEAN PMOS_AO W=1 L=1u
+C_OPA_BYP OPA_VCC 0 100n IC=3.3
+
+* --- MCP6001 macro (IN+ = VIN_BIAS, IN- = ELEC_B) ---
+G_OA 0 OA_INT ELEC_B VIN_BIAS -100000
+R_OA OA_INT 0 1
+C_OA OA_INT 0 15.9m
+E_OUT TIA_PRE 0 OA_INT 0 1
+R_OA_OUT TIA_PRE TIA_OUT 50
+D_CLH TIA_OUT OPA_VCC D_CL
+D_CLL 0 TIA_OUT D_CL
+.model D_CL D(IS=1e-12 RS=10)
+
+* --- Feedback Rf/Cf ---
+R_F ELEC_B TIA_OUT 22k
+C_F ELEC_B TIA_OUT 22p
+
+* --- Filtro ADC ---
+R_ADCPROT TIA_OUT ADC_CO2 1k
+C_ADC ADC_CO2 0 100p
+
+* ==================== 4. GAS FLOW (VENTOLA) ====================
+* PWM 25kHz, duty 50%, avvio a 5ms
+V_GPIO1 GPIO1_FAN 0 PULSE(0 3.3 5m 100n 100n 20u 40u)
+R_GATE_F GPIO1_FAN FAN_G 100
+M_FAN FAN_D FAN_G 0 0 NMOS_SI W=1 L=1u
+R_MOTOR V5V FAN_MID 20
+L_MOTOR FAN_MID FAN_D 1m
+D_FLYBACK 0 V5V D_SCH
+C1_FAN V5V 0 100n
+C2_FAN V5V 0 10u IC=5 Rser=0.02
+
+* ==================== 5. ESP32 (carico elettrico) ====================
+* Corrente da V5V: idle 20mA + burst SPI 40mA (2ms/30ms)
+I_ESP_IDLE V5V 0 20m
+I_ESP_SPI V5V 0 PULSE(0 40m 2m 50u 50u 2m 30m)
+* Decoupling devboard
+C_ESP_A V5V 0 100n
+C_ESP_B V5V 0 10u IC=5 Rser=0.01
+
+* ==================== 6. W5500 ETHERNET (carico 3.3V) ====================
+* Idle 30mA, burst TX 130mA per 2ms ogni 30ms
+I_W5500_IDLE V3V3 0 30m
+I_W5500_TX V3V3 0 PULSE(0 100m 15m 50u 50u 2m 30m)
+
+* ==================== 7. SHT41 + I2C ====================
+* Corrente trascurabile (0.3mA media)
+R_SHT41 V3V3 0 11k
+* Pull-up I2C
+R_PU_SDA V3V3 I2C_SDA 4.7k
+R_PU_SCL V3V3 I2C_SCL 4.7k
+* Capacità bus
+C_SDA I2C_SDA 0 30p
+C_SCL I2C_SCL 0 30p
+
+* ==================== 8. MONITORAGGIO V12V ====================
+R_VD1 V12V_PROT V_MON 100k
+R_VD2 V_MON 0 22k
+R_ADCV V_MON ADC_VMON 1k
+C_VMON ADC_VMON 0 100p
+
+* ==================== MODELLI GLOBALI ====================
+.model NMOS_SI NMOS(VTO=0.4 KP=5 RD=0.06 RS=0.06 CBD=50p CGS=200p CGD=30p)
+.model PMOS_AO PMOS(VTO=-0.6 KP=8 RD=0.022 RS=0.022 CBD=30p CGS=150p CGD=20p)
+.model D_SCH D(IS=5.4e-6 N=1.3 RS=0.04 BV=40 CJO=110p VJ=0.34 M=0.4 TT=5n)
+
+* ==================== SIMULAZIONE ====================
+.tran 0 80m 0 0.5u
+
+* ==================== MISURE CRITICHE ====================
+* --- Cross-interference su nodo ADC TIA ---
+.meas TRAN V_ADC_CO2_avg AVG V(ADC_CO2) FROM=20m TO=80m
+.meas TRAN V_ADC_CO2_pp PP V(ADC_CO2) FROM=20m TO=80m
+.meas TRAN V_TIA_avg AVG V(TIA_OUT) FROM=20m TO=80m
+.meas TRAN V_TIA_pp PP V(TIA_OUT) FROM=20m TO=80m
+
+* --- Stabilità rail ---
+.meas TRAN V3V3_avg AVG V(V3V3) FROM=20m TO=80m
+.meas TRAN V3V3_pp PP V(V3V3) FROM=20m TO=80m
+.meas TRAN V3V3_CLEAN_pp PP V(V3V3_CLEAN) FROM=20m TO=80m
+.meas TRAN V5V_avg AVG V(V5V) FROM=20m TO=80m
+.meas TRAN V5V_pp PP V(V5V) FROM=20m TO=80m
+.meas TRAN V12V_pp PP V(V12V_PROT) FROM=20m TO=80m
+
+* --- Bias TIA ---
+.meas TRAN V_bias_avg AVG V(VIN_BIAS) FROM=20m TO=80m
+.meas TRAN V_bias_pp PP V(VIN_BIAS) FROM=20m TO=80m
+
+* --- Potenza totale ---
+.meas TRAN I_12V_avg AVG I(V_12V) FROM=20m TO=80m
+.meas TRAN V_mon_avg AVG V(ADC_VMON) FROM=20m TO=80m
+
+* --- Heater ---
+.meas TRAN I_heater_avg AVG I(R_HEATER) FROM=20m TO=80m
+.meas TRAN P_heater_avg AVG (V(HEAT_PLUS,HEAT_MINUS)*I(R_HEATER)) FROM=20m TO=80m
+
+.backanno
+.end

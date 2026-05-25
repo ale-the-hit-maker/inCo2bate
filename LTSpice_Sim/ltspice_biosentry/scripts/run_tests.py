@@ -50,7 +50,7 @@ log = logging.getLogger("biosentry_test")
 
 BASE_DIR = Path(__file__).parent.parent  # ltspice_biosentry/
 NETLIST_DIR = BASE_DIR / "netlists"
-OUTPUT_DIR = BASE_DIR / "output"
+OUTPUT_DIR = OUTPUT_DIR = Path(__file__).parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 

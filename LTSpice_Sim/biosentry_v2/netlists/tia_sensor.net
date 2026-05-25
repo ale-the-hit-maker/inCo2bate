@@ -1,0 +1,103 @@
+* ============================================================
+* BioSentry IncuSense v2.1 — TIA Sensore CO2
+* Aggiornamento: Vin=1V via partitore 40k/10k da V5V
+*                Cf=22pF per stabilità (da analisi v2.0)
+* Ref: BioSentry PDF §2.5 + LaTeX aggiornato §Alimentazione
+* ============================================================
+*
+* Topologia TIA:
+*   IN+ = Vin = 1.0V (partitore da 5V)
+*   IN- = ELEC_B (nodo sensore)
+*   Sensore: ELEC_B → GND  (attraverso il sensore MOx)
+*   Rf:      ELEC_B → TIA_OUT (feedback)
+*   V_out = Vin + Rf × (Vin / Rs) = 1 + 22k/Rs
+*
+* Range uscita:
+*   Aria pura (Rs=2MΩ):  V_out = 1.011V
+*   5% CO2   (Rs=40kΩ):  V_out = 1.550V
+*   ΔV segnale = 0.539V entro ADC 0-3.0V
+* ============================================================
+
+* --- Alimentazione ---
+V_VCC V3V3 0 3.3
+V_5V  V5V  0 5
+
+* === PARTITORE BIAS Vin = 1V (NUOVO v2.1) ===
+* Rdiva=40k, Rdivb=10k → Vin = 5 × 10/(40+10) = 1.0V
+* Impedenza uscita: Rth = 40k//10k = 8kΩ
+* Condensatore di bypass per stabilizzare il nodo Vin
+R_DIV_A V5V   VIN_BIAS 40k
+R_DIV_B VIN_BIAS 0     10k
+C_BIAS  VIN_BIAS 0     100n
+
+* === POWER SWITCH AO3401 P-ch ===
+V_OPA_EN OPA_EN_CTRL 0 PULSE(3.3 0 0.5m 10u 10u 20m 30m)
+M_Q1 OPA_VCC OPA_EN_CTRL V3V3 V3V3 PMOS_AO3401 W=1 L=1u
+.model PMOS_AO3401 PMOS(VTO=-0.6 KP=8 RD=0.022 RS=0.022 CBD=30p CGS=150p CGD=20p)
+C_OPA_BYP OPA_VCC 0 100n IC=3.3
+
+* === SENSORE MOx Na:In2O3 ===
+* Un capo al nodo ELEC_B (IN-), l'altro a GND
+* Rs varia: aria=2MΩ, 5%CO2=40kΩ
+.param Rs_sensor=80k
+R_SENSOR ELEC_B 0 {Rs_sensor}
+C_SENSOR ELEC_B 0 30p
+
+* === MCP6001 OP-AMP (modello comportamentale) ===
+* IN+ = VIN_BIAS (1.0V)
+* IN- = ELEC_B
+* GBW = 1MHz, Slew = 0.6V/us, Iq = 100uA
+* Rail-to-rail output, Vcc = OPA_VCC (3.3V via switch)
+
+* Stadio di ingresso differenziale
+R_IN_BIAS VIN_BIAS 0 100MEG
+* Amplificatore con polo dominante
+* Aol=100dB=100000, polo a f_p = GBW/Aol = 1M/100k = 10Hz
+* tau = 1/(2pi*10) = 15.9ms → C = tau/R = 15.9e-3/1 = 15.9mF
+G_OA 0 OA_INT ELEC_B VIN_BIAS -100000
+R_OA OA_INT 0 1
+C_OA OA_INT 0 15.9m
+* Buffer di uscita
+E_OUT TIA_PRE 0 OA_INT 0 1
+R_OUT TIA_PRE TIA_OUT 50
+* Clamp rail-to-rail (0V ÷ OPA_VCC)
+D_CLH TIA_OUT OPA_VCC D_CL
+D_CLL 0 TIA_OUT D_CL
+.model D_CL D(IS=1e-12 N=1 RS=10)
+
+* === RETE DI FEEDBACK (AGGIORNATA v2.1) ===
+* Rf = 22kΩ (da dati sperimentali UNIFE)
+* Cf = 22pF (CORRETTO: era 10pF, instabile)
+*   Cf_min = sqrt(Cs / (2π × GBW × Rf))
+*          = sqrt(30e-12 / (2π × 1e6 × 22e3))
+*          = 14.7pF  →  Cf=22pF dà margine ×1.5
+*   f_c = 1/(2π × Rf × Cf) = 1/(2π × 22k × 22p) = 329kHz
+R_F ELEC_B TIA_OUT 22k
+C_F ELEC_B TIA_OUT 22p
+
+* === CIRCUITO CALIBRAZIONE ===
+R_F_CAL CAL_NODE TIA_OUT 470k
+V_CAL_EN GPIO_CAL 0 PULSE(0 3.3 22m 10u 10u 3m 30m)
+M_QCAL CAL_NODE GPIO_CAL ELEC_B ELEC_B NMOS_2N7002 W=1 L=1u
+.model NMOS_2N7002 NMOS(VTO=1.0 KP=0.5 RD=1.5 RS=1.5 CBD=10p CGS=20p)
+
+* === FILTRO ADC ===
+R_ADCPROT TIA_OUT GPIO0_ADC 1k
+C_ADC GPIO0_ADC 0 100p
+
+* === SIMULAZIONE ===
+.tran 0 30m 0 0.5u
+
+* Sweep Rs: aria → 5% CO2
+.step param Rs_sensor list 40k 60k 80k 100k 200k 500k 2MEG
+
+* === MISURE ===
+.meas TRAN V_tia_ss AVG V(TIA_OUT) FROM=5m TO=20m
+.meas TRAN V_adc_ss AVG V(GPIO0_ADC) FROM=5m TO=20m
+.meas TRAN V_tia_pp PP V(TIA_OUT) FROM=5m TO=20m
+.meas TRAN V_vin_bias AVG V(VIN_BIAS) FROM=5m TO=20m
+.meas TRAN I_sensor AVG I(R_SENSOR) FROM=5m TO=20m
+.meas TRAN V_tia_cal AVG V(TIA_OUT) FROM=23m TO=25m
+
+.backanno
+.end

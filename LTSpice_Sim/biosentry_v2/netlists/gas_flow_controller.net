@@ -1,0 +1,60 @@
+* ============================================================
+* BioSentry IncuSense — Gas Flow Controller (Fan Driver)
+* Revisione: 2025-06 (v2.0)
+* Ref: BioSentry System PDF §2.6
+* ============================================================
+* Ventola DC brushless pilotata da MOSFET N-ch via PWM 25kHz
+* Carico induttivo con diodo di ricircolo Schottky
+* Rete di disaccoppiamento locale C1+C2
+* ============================================================
+
+* --- Alimentazione 5V (dal buck converter) ---
+* Modellata con impedenza serie per simulare il buck
+V_5V V5V_IDEAL 0 5
+R_BUCK_OUT V5V_IDEAL V5V 0.1
+L_BUCK_OUT V5V_IDEAL V5V 1u
+
+* --- Rete di disaccoppiamento locale ventola ---
+C1_FAN V5V 0 100n
+C2_FAN V5V 0 10u IC=5
+
+* --- Modello ventola DC brushless ---
+* Resistenza + induttanza del motore (tipico ventola 5V miniatura)
+* R_motor ~ 15-30 Ohm, L_motor ~ 0.5-2 mH
+.param Rmotor=20
+.param Lmotor=1m
+R_MOTOR V5V FAN_MID {Rmotor}
+L_MOTOR FAN_MID FAN_DRAIN {Lmotor}
+
+* --- Diodo di ricircolo Schottky 1N5819 ---
+* Anodo a GND (drain MOSFET), Catodo a V5V
+D_FLYBACK 0 V5V D_1N5819
+.model D_1N5819 D(IS=5.4e-6 N=1.3 RS=0.04 BV=40 CJO=110p VJ=0.34 M=0.4 TT=5n)
+
+* --- MOSFET N-ch Si2302ADS (low-side switch ventola) ---
+R_GATE_FAN GPIO_PWM_FAN Q_FAN_GATE 100
+M_FAN FAN_DRAIN Q_FAN_GATE 0 0 NMOS_SI2302 W=1 L=1u
+.model NMOS_SI2302 NMOS(VTO=0.4 KP=5 RD=0.06 RS=0.06 CBD=50p CGS=200p CGD=30p)
+
+* --- Segnale PWM ventola: 25kHz ---
+* Soft-start: duty parte da 20% e sale a regime (qui simuliamo duty fisso)
+.param fan_duty=0.5
+V_PWM_FAN GPIO_PWM_FAN 0 PULSE(0 3.3 0 100n 100n {fan_duty/25k} {1/25k})
+
+* --- Direttive di simulazione ---
+* Transitorio: 5ms per osservare diversi cicli PWM a 25kHz
+.tran 0 5m 0 50n
+
+* --- Analisi parametrica: sweep duty cycle ---
+.step param fan_duty list 0.2 0.5 0.8 1.0
+
+* --- Misure automatiche ---
+.meas TRAN I_fan_avg AVG I(R_MOTOR) FROM=1m TO=5m
+.meas TRAN V_drain_peak MAX V(FAN_DRAIN) FROM=1m TO=5m
+.meas TRAN V_drain_min MIN V(FAN_DRAIN) FROM=1m TO=5m
+.meas TRAN V_5V_ripple PP V(V5V) FROM=2m TO=5m
+.meas TRAN P_fan_avg AVG (V(V5V,FAN_DRAIN)*I(R_MOTOR)) FROM=1m TO=5m
+.meas TRAN I_flyback_peak MAX I(D_FLYBACK) FROM=1m TO=5m
+
+.backanno
+.end
