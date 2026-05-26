@@ -1,0 +1,95 @@
+* ============================================================
+* BioSentry IncuSense v2.1 — ESP32-C3-MINI-1 MCU Model
+* ECO-v2.1-001: Heater PWM GPIO2 → GPIO3
+* Ref: BioSentry PDF §2.7 + errata corrige pin mapping
+* ============================================================
+*
+* PIN MAPPING v2.1 (post ECO-v2.1-001):
+*   GPIO0  = ADC1_CH0  → TIA_OUT (lettura sensore MOx)
+*   GPIO1  = PWM LEDC  → Ventola DC (25 kHz)
+*   GPIO2  = NC        → Strapping pin, non connesso
+*                         (pull-up interno garantisce HIGH al boot)
+*   GPIO3  = PWM LEDC  → Heater Si2302 (1 kHz) ← ECO-v2.1-001
+*   GPIO4  = SPI SCK   → W5500 (via R_SCK 33Ω)
+*   GPIO5  = SPI CS    → W5500
+*   GPIO6  = SPI MISO  ← W5500
+*   GPIO7  = SPI MOSI  → W5500 (via R_MOSI 33Ω)
+*   GPIO8  = I2C SDA   → SHT41 (pull-up 4.7kΩ)
+*   GPIO9  = I2C SCL   → SHT41 (pull-up 4.7kΩ)
+*   GPIO20 = UART TX   → J2 debug
+*   GPIO21 = UART RX   ← J2 debug
+*
+* MOTIVAZIONE ECO-v2.1-001:
+*   GPIO2 è strapping pin dell'ESP32-C3. Al Power-On Reset,
+*   GPIO2 deve essere HIGH per boot da Flash SPI.
+*   Il pull-down di sicurezza sul gate del MOSFET heater
+*   forzerebbe GPIO2 LOW → Download Mode permanente.
+*   GPIO3 è pin neutro, compatibile con LEDC per PWM hardware.
+* ============================================================
+
+* === ALIMENTAZIONE MCU ===
+* DevBoard: 5V in, regolatore interno 5V→3.3V
+V_5V V5V_IN 0 5
+C_ESP_10U V5V_IN 0 10u IC=5
+C_ESP_100N V5V_IN 0 100n
+
+* Corrente base: CPU idle ~20mA, attivo ~80mA (da 5V)
+I_ESP_BASE V5V_IN 0 20m
+* Burst SPI W5500: +40mA per 2ms ogni 30ms
+I_ESP_SPI V5V_IN 0 PULSE(0 40m 2m 50u 50u 2m 30m)
+
+* === GPIO0: ADC INPUT (TIA_OUT) ===
+* Impedenza ingresso ADC ESP32-C3: ~13MΩ // 5pF
+R_ADC0 GPIO0_ADC 0 13MEG
+C_ADC0 GPIO0_ADC 0 5p
+
+* === GPIO1: PWM VENTOLA (25 kHz, duty 50%) ===
+* Avvio dopo 5s, soft-start
+.param fan_duty=0.50
+V_GPIO1 GPIO1_FAN 0 PULSE(0 3.3 5m 100n 100n {fan_duty/25k} {1/25k})
+
+* === GPIO2: NON CONNESSO (strapping pin) ===
+* Pull-up interno ESP32 garantisce HIGH al boot.
+* Pin lasciato NC o come test pad isolato.
+R_GPIO2_PU V3V3_INT GPIO2_NC 45k
+* 45kΩ modella il pull-up interno tipico dell'ESP32-C3
+
+* === GPIO3: PWM HEATER (1 kHz, duty 10%) — ECO-v2.1-001 ===
+* Avvio dopo 8s (sequenza sfalsata), PID soft-start
+.param heater_duty=0.10
+V_GPIO3 GPIO3_HEATER 0 PULSE(0 3.3 8m 100n 100n {heater_duty/1k} {1/1k})
+
+* === GPIO4-7: BUS SPI (verso W5500) ===
+* Attività burst: 2ms ogni 30ms a 10MHz
+V_SPI_EN SPI_EN_NODE 0 PULSE(0 1 2m 10u 10u 2m 30m)
+* SCK modellato come carico capacitivo + corrente switching
+C_SPI_SCK GPIO4_SCK 0 15p
+C_SPI_MOSI GPIO7_MOSI 0 15p
+C_SPI_MISO GPIO6_MISO 0 15p
+C_SPI_CS GPIO5_CS 0 10p
+
+* === GPIO8-9: BUS I2C (verso SHT41) ===
+* Pull-up 4.7kΩ a V3V3
+V_3V3 V3V3_INT 0 3.3
+R_PU_SDA V3V3_INT GPIO8_SDA 4.7k
+R_PU_SCL V3V3_INT GPIO9_SCL 4.7k
+C_I2C_SDA GPIO8_SDA 0 30p
+C_I2C_SCL GPIO9_SCL 0 30p
+
+* === GPIO20: UART TX (debug) ===
+* Modellato come uscita logica idle HIGH
+V_UART_TX GPIO20_TX 0 3.3
+
+* === BOOT / EN ===
+R_BOOT V3V3_INT BOOT_PIN 10k
+R_EN_PU V3V3_INT EN_PIN 0.001
+
+* === SIMULAZIONE STANDALONE ===
+.tran 0 50m 0 1u
+
+.meas TRAN I_5V_avg AVG I(V_5V) FROM=10m TO=50m
+.meas TRAN V_gpio3_duty AVG V(GPIO3_HEATER) FROM=10m TO=50m
+.meas TRAN V_gpio1_duty AVG V(GPIO1_FAN) FROM=10m TO=50m
+
+.backanno
+.end

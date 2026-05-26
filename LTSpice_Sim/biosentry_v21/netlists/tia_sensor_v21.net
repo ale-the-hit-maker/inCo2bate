@@ -1,0 +1,108 @@
+* ============================================================
+* BioSentry IncuSense — Electrical Characterization (TIA)
+* Revisione: 2025-06 (v2.1) - Cf=22pF, polo 10Hz corretto, ECO-001 GPIO
+* Ref: Della Ciana 2021 Fig.4, BioSentry System PDF §2.5
+* ============================================================
+* TIA semplificato per prodotto commerciale:
+* - Vin fisso (1.0V tramite partitore su V5V) al posto del DAC
+* - Rf fisso (22k) al posto di MUX1 programmabile
+* - Calibrazione baseline via Rf_CAL commutabile
+* ============================================================
+
+* --- Alimentazione ---
+V_VCC V3V3 0 3.3
+V_BIAS V5V 0 5
+
+* --- Partitore di tensione per Vin = 1.0V (Riferimento TIA) ---
+* Divide i 5V per 5 usando resistenze di precisione (40k e 10k)
+R_DIV_A V5V VIN_1V 40k
+R_DIV_B VIN_1V 0 10k
+
+* --- Segnale EN op-amp (AO3401 P-ch, attivo basso) ---
+* Acceso per 12s su ciclo 30s; qui simuliamo un ciclo breve
+V_OPA_EN OPA_EN_CTRL 0 PULSE(3.3 0 1m 10u 10u 12m 30m)
+
+* --- AO3401 P-ch MOSFET come power switch per MCP6001 ---
+* Source=V3V3, Gate=OPA_EN_CTRL, Drain=OPA_VCC
+M_Q1 OPA_VCC OPA_EN_CTRL V3V3 V3V3 PMOS_AO3401 W=1 L=1u
+.model PMOS_AO3401 PMOS(VTO=-0.6 KP=8 RD=0.022 RS=0.022 CBD=30p CGS=150p CGD=20p)
+
+* --- Bypass decoupling su OPA_VCC ---
+C_OPA_BYPASS OPA_VCC 0 100n IC=3.3
+
+* --- Sensore MOx Na:In2O3 (modello resistivo variabile) ---
+* Un capo collegato a GND (0), l'altro a ELEC_B (TIA inv input)
+* R_s varia: aria=2M, 5%CO2=40k-100k
+.param Rs_sensor=80k
+R_SENSOR 0 ELEC_B {Rs_sensor}
+
+* --- Capacità parassita sensore TO-39 ---
+C_SENSOR ELEC_B 0 30p
+
+* --- MCP6001 Op-Amp (modello comportamentale macro) ---
+* Configurazione TIA: IN+ = VIN_1V, IN- = ELEC_B, OUT = TIA_OUT
+* Modello semplificato: E-source con GBW=1MHz, Slew=0.6V/us
+* VCC = OPA_VCC, GND = 0 (rail-to-rail)
+*
+* Circuito equivalente op-amp:
+* Stadio di ingresso: alta impedenza
+R_INP IN_PLUS 0 100MEG
+R_INN ELEC_B ELEC_B_INT 10
+C_INN ELEC_B_INT 0 2p
+* Amplificatore con polo dominante a f=10Hz (GBW/Aol = 1MHz/100k)
+* fp = 1/(2π×R_OA×C_OA) = 1/(2π×1×15.9m) ≈ 10Hz
+G_OA 0 OA_INT ELEC_B_INT IN_PLUS -100k
+R_OA OA_INT 0 1
+C_OA OA_INT 0 15.9m
+* Stadio di uscita (buffer)
+E_OUT TIA_OUT_INT 0 OA_INT 0 1
+R_OUT TIA_OUT_INT TIA_OUT 50
+* Clamp rail-to-rail
+D_CLAMP_H TIA_OUT OPA_VCC D_CLAMP
+D_CLAMP_L 0 TIA_OUT D_CLAMP
+.model D_CLAMP D(IS=1e-12 N=1 RS=10)
+* Il pin IN+ dell'op-amp è collegato saldamente al partitore a 1V
+R_VIN_REF IN_PLUS VIN_1V 0.001
+
+* --- Rf: resistenza di feedback TIA ---
+.param Rf_val=22k
+R_F ELEC_B TIA_OUT {Rf_val}
+
+* --- Cf: condensatore di stabilizzazione ---
+* Cf_min = sqrt(Cs/(2π×GBW×Rf)) = sqrt(30p/(6.28×1M×22k)) = 14.7pF
+* Cf=22pF → margine stabilità ×1.49 (era 10pF → ×0.68, INSTABILE)
+C_F ELEC_B TIA_OUT 22p
+
+* --- Circuito di calibrazione Rf_CAL ---
+* Rf_CAL = 470k in parallelo a Rf, commutata via 2N7002
+R_F_CAL CAL_NODE TIA_OUT 470k
+* 2N7002 come switch
+V_CAL_EN GPIO_CAL 0 PULSE(0 3.3 20m 10u 10u 5m 30m)
+M_QCAL CAL_NODE GPIO_CAL ELEC_B ELEC_B NMOS_2N7002 W=1 L=1u
+.model NMOS_2N7002 NMOS(VTO=1.0 KP=0.5 RD=1.5 RS=1.5 CBD=10p CGS=20p)
+
+* --- Protezione ADC e filtro anti-aliasing ---
+R_ADCPROT TIA_OUT GPIO0_ADC 1k
+C_ADC GPIO0_ADC 0 100p
+
+* --- Direttive di simulazione ---
+* Transitorio per osservare accensione op-amp, settling, e calibrazione
+.tran 0 35m 0 0.5u
+
+* --- Analisi parametrica: variazione Rs_sensor ---
+* Aria pura: 2M, CO2 crescente: 500k, 100k, 80k, 40k
+.step param Rs_sensor list 40k 80k 100k 500k 2MEG
+
+* --- Misure automatiche ---
+.meas TRAN V_tia_settled AVG V(TIA_OUT) FROM=5m TO=12m
+.meas TRAN V_adc_settled AVG V(GPIO0_ADC) FROM=5m TO=12m
+.meas TRAN V_tia_cal AVG V(TIA_OUT) FROM=22m TO=25m
+.meas TRAN settling_time FIND time WHEN V(TIA_OUT)=V(TIA_OUT)*0.99 RISE=1
+.meas TRAN I_sensor AVG I(R_SENSOR) FROM=5m TO=12m
+
+* --- Analisi AC per stabilità ---
+* Decommentare per analisi AC (commentare .tran)
+* .ac dec 100 1 10MEG
+
+.backanno
+.end
