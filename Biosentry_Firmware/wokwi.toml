@@ -1,6 +1,7 @@
 [wokwi]
 version = 1
-firmware = ".pio/build/esp32-c3-devkitm-1/firmware.elf"
-elf = ".pio/build/esp32-c3-devkitm-1/firmware.elf"
+filesystem = ".pio/build/esp32-c3-devkitm-1/littlefs.bin"
+firmware = ".pio/build/esp32-c3-devkitm-1/firmware.bin"
+partitions = ".pio/build/esp32-c3-devkitm-1/partitions.bin"
 debug = true
 gdbServerPort = 3333
