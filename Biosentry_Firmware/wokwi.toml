@@ -2,3 +2,5 @@
 version = 1
 firmware = ".pio/build/esp32-c3-devkitm-1/firmware.elf"
 elf = ".pio/build/esp32-c3-devkitm-1/firmware.elf"
+debug = true
+gdbServerPort = 3333
