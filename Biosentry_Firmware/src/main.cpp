@@ -343,28 +343,42 @@ void setup() {
     }
 
     // Initialize LittleFS with formatOnFail = true
-    // Print available data partitions for debugging
-    {
-        const esp_partition_t* p = NULL;
-        esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, NULL);
-        Serial.println("[PART] Listing data partitions:");
-        while ((p = esp_partition_get(it)) != NULL) {
-            Serial.printf("[PART] label='%s' addr=0x%08x size=0x%08x subtype=0x%02x\n", p->label, p->address, p->size, p->subtype);
-            it = esp_partition_next(it);
+    // Print available partitions for debugging and pick the first valid filesystem label.
+    const char *candidateLabels[] = {"vfs", "littlefs", "spiffs"};
+    const char *fs_label = nullptr;
+
+    Serial.println("[PART] Checking candidate filesystem partitions:");
+    for (const char *label : candidateLabels) {
+        const esp_partition_t *partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, label);
+        if (partition != nullptr) {
+            Serial.printf("[PART] found label='%s' addr=0x%08x size=0x%08x subtype=0x%02x\n", label, partition->address, partition->size, partition->subtype);
+            if (fs_label == nullptr) {
+                fs_label = label;
+            }
+        } else {
+            Serial.printf("[PART] no partition with label '%s'\n", label);
         }
-        esp_partition_iterator_release(it);
     }
 
-    const char* fs_label = "spiffs"; // Default per hardware reale (PlatformIO)
-    
-    // Controlliamo se esiste la partizione 'vfs' (tipica del simulatore Wokwi)
-    if (esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "vfs") != NULL) {
-        fs_label = "vfs";
+    if (fs_label == nullptr) {
+        Serial.println("[PART] No filesystem partition label found. Falling back to default label 'spiffs'.");
+        fs_label = "spiffs";
+    }
+    Serial.printf("[FS] mounting LittleFS on label '%s'\n", fs_label);
+
+    bool fsMounted = LittleFS.begin(false, "/littlefs", 10, fs_label);
+    if (!fsMounted) {
+        Serial.println("[FS] initial LittleFS mount failed, attempting format...");
+        if (LittleFS.format()) {
+            Serial.println("[FS] LittleFS formatted successfully, retrying mount...");
+            fsMounted = LittleFS.begin(false, "/littlefs", 10, fs_label);
+        } else {
+            Serial.println("[FS] LittleFS format failed");
+        }
     }
 
-    // Montiamo LittleFS dicendogli esattamente quale etichetta cercare
-    if (!LittleFS.begin(true, "/littlefs", 10, fs_label)) {
-        Serial.println("[FS] LittleFS mount failed (Formattazione fallita)");
+    if (!fsMounted) {
+        Serial.println("[FS] LittleFS mount failed");
     } else {
         Serial.println("[FS] LittleFS mounted successfully");
     }
