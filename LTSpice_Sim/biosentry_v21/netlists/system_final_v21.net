@@ -1,0 +1,291 @@
+* ============================================================
+* BioSentry IncuSense — System Integrated Netlist
+* Revisione: 2025-06 (v2.1)
+* Ref: BioSentry System PDF — §2.4, §2.5, §2.6, §2.7, §2.8
+* ============================================================
+* File generato dal Master Action Plan v2.1 (§2F).
+* Integra tutti i sottosistemi per l'analisi cross-interference.
+*
+* Sottosistemi inclusi:
+*   1. Sorgente 12V con impedenza cavo PoE (Ri=0.1Ω)
+*   2. Catena di protezione: TVS SMBJ12A + Polyfuse 1Ω + C_in bulk
+*   3. Buck AP63203 (modello comportamentale)
+*   4. LDO AP2112K (modello comportamentale)
+*   5. LC filter analogico su V3V3_ANALOG per op-amp
+*   6. Heater driver con topologia corretta (M1/Rref/Q1 v2.1)
+*   7. TIA completo: partitore bias → sensore → MCP6001 → GPIO0
+*   8. Gas Flow Controller (ventola MOSFET + flyback)
+*   9. ESP32-C3: carico su V5V (non V3V3!)
+*  10. W5500: carico su V3V3
+*  11. V_MON: divider 100k/22k su GPIO2 da V12V_PROT
+*  12. Timing: sequenza §2.8.4 (Ethernet→Ventola→Heater)
+*
+* PIN MAPPING v2.1 (validato):
+*   GPIO0  → TIA_OUT (ADC1_CH0)
+*   GPIO1  → Ventola DC PWM 25kHz (LEDC)
+*   GPIO2  → V_MON ADC (ADC1_CH2, divider 100k/22k → 2.16V)
+*   GPIO3  → Heater Q1 PWM 1kHz (LEDC) [ECO-v2.1-001]
+*   GPIO4-7 → SPI W5500
+*   GPIO8-9 → I2C SHT41
+*   GPIO10 → M1 Gate Selector (regime heater, pull-down 10kΩ)
+*   GPIO20-21 → UART debug
+* ============================================================
+
+* ============================================================
+* 1. SORGENTE 12V (impedenza cavo PoE: Ri=0.1Ω)
+* ============================================================
+V_12V_IDEAL V12V_IDEAL_NODE 0 12
+R_POE_CABLE V12V_IDEAL_NODE V12V_RAW 0.1
+* Ripple residuo splitter PoE (50kHz switching)
+V_RIPPLE V12V_RIPPLE_SRC 0 SIN(0 0.05 50k)
+E_RIPPLE_ADD V12V_RAW_NOISY V12V_RAW V12V_RIPPLE_SRC 0 1
+
+* ============================================================
+* 2. CATENA DI PROTEZIONE
+* ============================================================
+
+* --- TVS SMBJ12A (bidirezionale, clamp ~16V) ---
+D_TVS_FW V12V_RAW_NOISY 0 D_SMBJ12A
+D_TVS_RV 0 V12V_RAW_NOISY D_SMBJ12A
+.model D_SMBJ12A D(IS=1e-12 N=1 BV=13.3 IBV=1m RS=0.5 CJO=600p)
+
+* --- Polyfuse Bourns MF-MSMF050 (1Ω cold) ---
+R_POLYFUSE V12V_RAW_NOISY V12V_PROT 1
+
+* --- Condensatore di bulk ingresso (100µF/25V) ---
+C_IN_BULK V12V_PROT 0 100u IC=12 Rser=0.05
+
+* ============================================================
+* 3. BUCK CONVERTER AP63203 (modello comportamentale)
+* η=85% nominale, fsw=1.5MHz
+* ============================================================
+B_BUCK V5V_BUCK_OUT 0 V=IF(V(V12V_PROT)>6, 5.0*(1-0.002*(I(R_LOAD_ESP)-0.04)), 0)
+R_BUCK_SER V5V_BUCK_OUT V5V_PREFILTER 0.15
+L_BUCK V5V_PREFILTER V5V_OUT 4.7u Rser=0.08
+C_BUCK_OUT V5V_OUT 0 10u IC=5 Rser=0.01
+C_BUCK_IN V12V_PROT 0 10u Rser=0.01
+
+* --- Partitore di retroazione feedback (monitoraggio, non in loop) ---
+R_BUCK_FB1 V5V_OUT BUCK_FB_NODE 82k
+R_BUCK_FB2 BUCK_FB_NODE 0 27.4k
+
+* ============================================================
+* 4. LDO AP2112K-3.3 (modello comportamentale)
+* Dropout: 250mV, Imax=600mA
+* ============================================================
+B_LDO V3V3_PRE 0 V=IF(V(V5V_OUT)>3.55, 3.3, V(V5V_OUT)-0.25)
+R_LDO_OUT V3V3_PRE V3V3 0.05
+
+* --- Decoupling LDO uscita ---
+C6_LDO V3V3 0 10u IC=3.3 Rser=0.01
+C7_LDO V3V3 0 100n
+C8_BULK V3V3 0 470u IC=3.3 Rser=0.08
+
+* --- Decoupling LDO ingresso ---
+C5_LDO_IN V5V_OUT 0 10u Rser=0.01
+
+* ============================================================
+* 5. LC FILTER ANALOGICO (V3V3 → V3V3_ANALOG per MCP6001)
+* Ferrite bead: L=1µH, Rser=1Ω; C=10µF
+* fc_RC = 1/(2π×1×10µ) = 15.9kHz
+* ============================================================
+L_FERRITE V3V3 V3V3_ANALOG_MID 1u Rser=1
+C_FERRITE V3V3_ANALOG_MID 0 10u Rser=0.01
+* Piccolo condensatore sul lato analogico
+C_FERRITE_BYPASS V3V3_ANALOG_MID 0 100n
+
+* Rail analogico dopo il filtro
+.alias V3V3_ANALOG V3V3_ANALOG_MID
+
+* ============================================================
+* 6. HEATER DRIVER (topologia corretta v2.1)
+* GPIO10 → M1 gate (regime selector, pull-down 10kΩ)
+* GPIO3  → Q1 base (PWM 1kHz, duty 10%) [ECO-v2.1-001]
+* Topologia: M1 D=HEAT_MINUS S=REF_NODE;
+*            Rref tra HEAT_MINUS e REF_NODE (parallelo M1);
+*            Q1 C=REF_NODE E=GND
+* ============================================================
+
+* --- Segnali di controllo ---
+* GPIO10: avvio dopo 8s (sequenza §2.8.4), ciclo 10ms (9ms supply, 1ms measure)
+V_M1_SEL GPIO10_M1 0 PULSE(0 3.3 8 1u 1u 9m 10m)
+* GPIO10 pull-down esterno (boot-safe: M1 OFF al POR)
+R_M1_PD GPIO10_M1 0 10k
+* GPIO3: PWM 1kHz duty 10%, avvio dopo 8s
+V_Q1_PWM GPIO3_PWM 0 PULSE(0 3.3 8 1u 1u 100u 1m)
+
+* --- Heater Pt (PTC, R0=10Ω RT) ---
+.param Rh_sys=18
+* Rh_sys=18Ω → T≈250°C (target operativo)
+R_HEATER V12V_PROT HEAT_MINUS {Rh_sys}
+
+* --- M1 Si2302ADS: D=HEAT_MINUS, S=REF_NODE (bypassa Rref in supply) ---
+R_M1_GATE GPIO10_M1 M1_GATE_SYS 100
+M1 HEAT_MINUS M1_GATE_SYS REF_NODE REF_NODE NMOS_SI2302_SYS W=1 L=1u
+.model NMOS_SI2302_SYS NMOS(VTO=0.4 KP=5 RD=0.06 RS=0.06 CBD=50p CGS=200p CGD=30p)
+
+* --- Rref: in parallelo a M1 (tra HEAT_MINUS e REF_NODE) ---
+R_REF_SYS HEAT_MINUS REF_NODE 100
+
+* --- Q1 NPN 2N2222: C=REF_NODE, E=GND (gate finale della corrente) ---
+R_Q1_BASE GPIO3_PWM Q1_BASE_SYS 1k
+Q1_SYS REF_NODE Q1_BASE_SYS 0 NPN_2N2222_SYS
+.model NPN_2N2222_SYS NPN(BF=200 IS=1e-14 VAF=100 CJC=8p CJE=25p TF=0.4n)
+
+* ============================================================
+* 7. TIA COMPLETO (Electrical Characterization)
+* Partitore bias V5V → 1V; Rs parametrico; MCP6001; → GPIO0
+* ============================================================
+
+* --- Partitore di bias (40k/10k da V5V → Vin=1V) ---
+R_DIV_A_SYS V5V_OUT VIN_1V_SYS 40k
+R_DIV_B_SYS VIN_1V_SYS 0 10k
+
+* --- P-ch MOSFET AO3401 come power switch MCP6001 ---
+* Sempre acceso in questa simulazione di sistema (EN=LOW permanente)
+V_OPA_EN_SYS OPA_EN_SYS 0 0
+M_Q1_OPA OPA_VCC_SYS OPA_EN_SYS V3V3_ANALOG_MID V3V3_ANALOG_MID PMOS_AO3401_SYS W=1 L=1u
+.model PMOS_AO3401_SYS PMOS(VTO=-0.6 KP=8 RD=0.022 RS=0.022 CBD=30p CGS=150p CGD=20p)
+C_OPA_BYPASS_SYS OPA_VCC_SYS 0 100n IC=3.3
+
+* --- Sensore MOx (Na:In2O3): capo a GND, capo a ELEC_B ---
+.param Rs_sys=80k
+R_SENSOR_SYS 0 ELEC_B_SYS {Rs_sys}
+C_SENSOR_SYS ELEC_B_SYS 0 30p
+
+* --- MCP6001 Op-Amp (modello comportamentale macro) ---
+* IN+ = VIN_1V_SYS, IN- = ELEC_B_SYS, VCC = OPA_VCC_SYS
+R_INP_SYS IN_PLUS_SYS 0 100MEG
+R_INN_SYS ELEC_B_SYS ELEC_B_INT_SYS 10
+C_INN_SYS ELEC_B_INT_SYS 0 2p
+G_OA_SYS 0 OA_INT_SYS ELEC_B_INT_SYS IN_PLUS_SYS -100k
+R_OA_SYS OA_INT_SYS 0 1
+C_OA_SYS OA_INT_SYS 0 15.9m
+E_OUT_SYS TIA_OUT_INT_SYS 0 OA_INT_SYS 0 1
+R_OUT_SYS TIA_OUT_INT_SYS TIA_OUT_SYS 50
+D_CLAMP_H_SYS TIA_OUT_SYS OPA_VCC_SYS D_CLAMP_SYS
+D_CLAMP_L_SYS 0 TIA_OUT_SYS D_CLAMP_SYS
+.model D_CLAMP_SYS D(IS=1e-12 N=1 RS=10)
+R_VIN_REF_SYS IN_PLUS_SYS VIN_1V_SYS 0.001
+
+* --- Rf e Cf del TIA ---
+R_F_SYS ELEC_B_SYS TIA_OUT_SYS 22k
+C_F_SYS ELEC_B_SYS TIA_OUT_SYS 22p
+
+* --- Protezione ADC e filtro anti-aliasing ---
+R_ADCPROT_SYS TIA_OUT_SYS GPIO0_ADC_SYS 1k
+C_ADC_SYS GPIO0_ADC_SYS 0 100p
+* Impedenza ingresso ADC GPIO0
+R_ADC0_Z GPIO0_ADC_SYS 0 13MEG
+C_ADC0_Z GPIO0_ADC_SYS 0 5p
+
+* ============================================================
+* 8. GAS FLOW CONTROLLER (ventola DC brushless)
+* GPIO1 → PWM 25kHz, MOSFET low-side, diodo flyback
+* Avvio dopo 5s (sequenza §2.8.4)
+* ============================================================
+
+* --- PWM ventola (GPIO1, avvio dopo 5s) ---
+.param fan_duty_sys=0.50
+V_GPIO1_FAN GPIO1_FAN 0 PULSE(0 3.3 5 100n 100n {fan_duty_sys/25k} {1/25k})
+
+* --- Rete di disaccoppiamento locale ---
+C1_FAN_SYS V5V_OUT 0 100n
+C2_FAN_SYS V5V_OUT 0 10u IC=5
+
+* --- Modello ventola DC (Rmotor=20Ω, Lmotor=1mH) ---
+R_MOTOR_SYS V5V_OUT FAN_MID_SYS 20
+L_MOTOR_SYS FAN_MID_SYS FAN_DRAIN_SYS 1m
+
+* --- Diodo flyback Schottky 1N5819 ---
+D_FLYBACK_SYS 0 V5V_OUT D_1N5819_SYS
+.model D_1N5819_SYS D(IS=5.4e-6 N=1.3 RS=0.04 BV=40 CJO=110p VJ=0.34 M=0.4 TT=5n)
+
+* --- MOSFET N-ch Si2302ADS (low-side fan switch) ---
+R_GATE_FAN_SYS GPIO1_FAN FAN_GATE_SYS 100
+M_FAN_SYS FAN_DRAIN_SYS FAN_GATE_SYS 0 0 NMOS_SI2302_FAN W=1 L=1u
+.model NMOS_SI2302_FAN NMOS(VTO=0.4 KP=5 RD=0.06 RS=0.06 CBD=50p CGS=200p CGD=30p)
+
+* ============================================================
+* 9. ESP32-C3: CARICO SU V5V (regolatore interno 5V→3.3V)
+* NOTA: il carico ESP32 va modellato SOLO su V5V, non su V3V3!
+* ============================================================
+* Idle: 20mA; Burst SPI (+40mA per 2ms ogni 30ms, da t=0.5s)
+I_ESP_IDLE_SYS V5V_OUT 0 20m
+I_ESP_SPI_SYS V5V_OUT 0 PULSE(0 40m 500m 50u 50u 2m 30m)
+* R equivalente per analisi DC (80mA @ 5V = 62.5Ω)
+R_LOAD_ESP V5V_OUT 0 62.5
+
+* ============================================================
+* 10. W5500 ETHERNET: CARICO SU V3V3
+* ============================================================
+* Idle: 30mA; TX burst: +100mA per 2ms ogni 30ms (da t=0.2s)
+I_W5500_IDLE_SYS V3V3 0 30m
+I_W5500_BURST_SYS V3V3 0 PULSE(0 100m 200m 50u 50u 2m 30m)
+* MCP6001 TIA (da rail analogico filtrato, già modellato sopra)
+R_LOAD_OPA_SYS V3V3_ANALOG_MID 0 33k
+* SHT41 T/RH sensor (0.3mA average)
+R_LOAD_SHT41 V3V3 0 11k
+
+* ============================================================
+* 11. V_MON: DIVIDER 12V → GPIO2 (ADC1_CH2)
+* 100k/22k → 2.16V. Boot-safe: 2.16V > Vih(1.65V).
+* ============================================================
+R_VD1_SYS V12V_PROT V_MON_SYS 100k
+R_VD2_SYS V_MON_SYS 0 22k
+R_ADCV_SYS V_MON_SYS GPIO2_VMON_SYS 1k
+C_MON_SYS GPIO2_VMON_SYS 0 100p
+R_ADC2_Z GPIO2_VMON_SYS 0 13MEG
+
+* ============================================================
+* 12. DIRETTIVE DI SIMULAZIONE
+* Transitorio: 12s per coprire tutta la sequenza di avviamento:
+*   t=0s    → Alimentazione ON, protezione attiva
+*   t=0s    → W5500 inizia negoziazione Ethernet
+*   t=0.2s  → W5500 TX burst inizia
+*   t=0.5s  → ESP32 burst SPI inizia
+*   t=5s    → Ventola avviata
+*   t=8s    → Heater avviato (regime selector GPIO10 attivo)
+* ============================================================
+.tran 0 12 0 1u
+
+* ============================================================
+* MISURE AUTOMATICHE
+* ============================================================
+
+* --- Rail voltages ---
+.meas TRAN V12_avg   AVG V(V12V_PROT)  FROM=9 TO=12
+.meas TRAN V5_avg    AVG V(V5V_OUT)    FROM=9 TO=12
+.meas TRAN V33_avg   AVG V(V3V3)       FROM=9 TO=12
+.meas TRAN V33a_avg  AVG V(V3V3_ANALOG_MID) FROM=9 TO=12
+
+* --- Rail ripple (regime stazionario, post-heater start) ---
+.meas TRAN V12_ripple  PP V(V12V_PROT)       FROM=9 TO=12
+.meas TRAN V5_ripple   PP V(V5V_OUT)         FROM=9 TO=12
+.meas TRAN V33_ripple  PP V(V3V3)            FROM=9 TO=12
+.meas TRAN V33a_ripple PP V(V3V3_ANALOG_MID) FROM=9 TO=12
+
+* --- TIA output ---
+.meas TRAN V_tia_avg    AVG V(TIA_OUT_SYS)    FROM=9 TO=12
+.meas TRAN V_adc0_avg   AVG V(GPIO0_ADC_SYS)  FROM=9 TO=12
+.meas TRAN V_tia_ripple PP  V(GPIO0_ADC_SYS)  FROM=9 TO=12
+
+* --- V_MON ---
+.meas TRAN V_mon_avg AVG V(GPIO2_VMON_SYS) FROM=9 TO=12
+
+* --- Heater regime ---
+.meas TRAN V_heat_minus_avg AVG V(HEAT_MINUS)      FROM=9.001 TO=9.009
+.meas TRAN V_rref_meas      AVG V(HEAT_MINUS,REF_NODE) FROM=9.009 TO=9.010
+
+* --- Power totale ---
+.meas TRAN I_poe_avg AVG I(V_12V_IDEAL) FROM=9 TO=12
+.meas TRAN P_poe_avg PARAM {12*I_poe_avg}
+
+* --- Cross-interference: rumore TIA durante burst W5500 ---
+.meas TRAN V_tia_during_w5500 PP V(GPIO0_ADC_SYS) FROM=0.200 TO=0.202
+
+* --- Analisi parametrica: sweep Rs sensore ---
+.step param Rs_sys list 40k 80k 100k 500k 2MEG
+
+.backanno
+.end

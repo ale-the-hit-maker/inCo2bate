@@ -1,27 +1,39 @@
 * ============================================================
 * BioSentry IncuSense — Heater Driver Circuit
-* Revisione: 2025-06 (v2.1 — ECO-v2.1-001: PWM su GPIO3)
+* Revisione: 2025-06 (v2.1 — ECO-v2.1-001: PWM su GPIO3; FIX topologia M1/Q1/Rref)
 * Ref: Della Ciana 2021, Fig. 3 + BioSentry System PDF §2.4
 * ============================================================
 * ECO-v2.1-001: Heater PWM spostato da GPIO2 a GPIO3.
 * GPIO2 è strapping pin ESP32-C3: al boot deve essere HIGH.
 * Un pull-down hardware sul gate MOSFET forzerebbe GPIO2 LOW
 * → boot in Download Mode. GPIO3 è pin neutro, nessun conflitto.
-* Topologia: PWM low-side switch (Si2302ADS) per heater Pt
-* Due regimi: Supply (M1 ON, Q1 PWM) e Measurement (M1 OFF, Q1 ON)
-* R_heater modellato come PTC Pt: R(T) = R0*(1 + alpha*T)
+*
+* FIX TOPOLOGIA v2.1 (critico):
+* Bug v2.0: M1 Source era a GND → cortocircuitava HEAT_MINUS a GND,
+*           bypassando Rref e Q1, rendendo la modulazione PWM inefficace.
+* Fix: M1 Source → REF_NODE. Rref tra HEAT_MINUS e REF_NODE (parallelo a M1).
+*      Q1: Collettore=REF_NODE, Emettitore=GND (gate finale della corrente).
+* Supply mode (M1 ON, Q1 PWM):
+*   V12V→R_HEATER→HEAT_MINUS→[M1: D=HEAT_MINUS, S=REF_NODE]→Q1→GND
+* Measurement mode (M1 OFF, Q1 full ON):
+*   V12V→R_HEATER→HEAT_MINUS→[Rref: HEAT_MINUS→REF_NODE]→Q1→GND
+* Formula: R_Heater = ΔV(V12V,HEAT_MINUS) × Rref / ΔV(HEAT_MINUS,REF_NODE) ✓
+*          [conforme Della Ciana 2021, Eq.1]
 * ============================================================
 
 * --- Alimentazione principale ---
 V_12V V12V_PROT 0 12
 
-* --- Segnale GPIO (controllo M1): alto in supply, basso in measurement ---
-* Alterno supply (0-9ms) e measurement (9-10ms) in cicli di 10ms
-V_GPIO GPIO_M1 0 PULSE(0 3.3 0 1u 1u 9m 10m)
+* --- Segnale GPIO10 (controllo M1): regime selector ---
+* GPIO10 → M1 gate (regime selector)
+* Alto (9ms) = supply mode; Basso (1ms) = measurement mode
+* Avvio dopo 8ms (sequenza sfalsata). Pull-down esterno 10kΩ garantisce OFF al boot.
+V_M1_SEL GPIO10_M1 0 PULSE(0 3.3 0 1u 1u 9m 10m)
 
-* --- Segnale PWM (controllo Q1): 1kHz, duty 10% in supply ---
+* --- Segnale GPIO3 (controllo Q1): 1kHz, duty 10% in supply ---
+* GPIO3 → Q1 base [ECO-v2.1-001]
 * In measurement mode, Q1 deve restare ON (gestito in post-processing)
-V_PWM PWM_IN 0 PULSE(0 3.3 0 1u 1u 100u 1m)
+V_Q1_PWM GPIO3_PWM 0 PULSE(0 3.3 0 1u 1u 100u 1m)
 
 * --- Heater Pt (R0=10 Ohm a RT, PTC) ---
 * Modellato come R fisso per analisi AC/transitorio iniziale
@@ -32,26 +44,31 @@ R_HEATER V12V_PROT HEAT_MINUS {Rheater}
 * --- M1: Si2302ADS N-ch MOSFET (low-side switch per heater) ---
 * Modello semplificato con MOSFET standard LTSpice
 * Gate=GPIO via R_GATE, Drain=HEAT_MINUS, Source=GND
-R_GATE GPIO_M1 M1_GATE 100
-M1 HEAT_MINUS M1_GATE 0 0 NMOS_SI2302 W=1 L=1u
+R_GATE GPIO10_M1 M1_GATE 100
+M1 HEAT_MINUS M1_GATE REF_NODE REF_NODE NMOS_SI2302 W=1 L=1u
 .model NMOS_SI2302 NMOS(VTO=0.4 KP=5 RD=0.06 RS=0.06 CBD=50p CGS=200p CGD=30p)
 
 * --- Q1: NPN transistor per modulazione PWM ---
-* Collettore connesso al nodo tra heater e M1 drain
-* In supply mode: Q1 ON bypassa Rref
-* In measurement mode: Q1 sempre ON, corrente va in Rref
-R_BASE PWM_IN Q1_BASE 1k
-Q1 HEAT_MINUS Q1_BASE Q1_EMITTER NPN_2N2222
+* Collettore connesso a REF_NODE (nodo comune con Source M1 e Rref)
+* Emettitore a GND: Q1 è il gate finale della corrente
+* In supply mode (M1 ON, Q1 PWM): V12V → R_HEATER → M1(HEAT_MINUS→REF_NODE) → Q1(REF_NODE→GND)
+* In measurement mode (M1 OFF, Q1 ON): V12V → R_HEATER → Rref(HEAT_MINUS→REF_NODE) → Q1(REF_NODE→GND)
+R_BASE GPIO3_PWM Q1_BASE 1k
+Q1 REF_NODE Q1_BASE 0 NPN_2N2222
 .model NPN_2N2222 NPN(BF=200 IS=1e-14 VAF=100 CJC=8p CJE=25p TF=0.4n)
 
 * --- Rref: resistenza di riferimento calibrata ---
+* Rref è in parallelo a M1 (tra HEAT_MINUS e REF_NODE).
+* Measurement mode (M1 OFF): corrente V12V→R_HEATER→Rref→Q1→GND.
+*   Formula: R_Heater = ΔV(V12V,HEAT_MINUS) × Rref / ΔV(HEAT_MINUS,REF_NODE) ✓ [Eq.1 Della Ciana 2021]
+* Supply mode (M1 ON): M1 cortocircuita Rref, corrente bypassa Rref via M1.
 .param Rref=100
-R_REF Q1_EMITTER 0 {Rref}
+R_REF HEAT_MINUS REF_NODE {Rref}
 
 * --- Nodi di misura per gli amplificatori differenziali ---
-* ADC Ch.1: tensione ai capi del heater = V(V12V_PROT) - V(HEAT_MINUS)
-* ADC Ch.2: tensione ai capi di Rref = V(Q1_EMITTER) - V(0)
-* (In LTSpice si misurano come V(V12V_PROT,HEAT_MINUS) e V(Q1_EMITTER))
+* ADC Ch.1: tensione ai capi del heater = V(V12V_PROT, HEAT_MINUS)
+* ADC Ch.2: tensione ai capi di Rref = V(HEAT_MINUS, REF_NODE)
+* Formula: R_Heater = ΔV_Heater × Rref / ΔV_Ref  [Della Ciana 2021, Eq.1]
 
 * --- Condensatore di bulk sul rail 12V ---
 C_IN V12V_PROT 0 100u IC=12
@@ -68,9 +85,9 @@ C_IN V12V_PROT 0 100u IC=12
 * --- Misure automatiche ---
 .meas TRAN I_heater_avg AVG I(R_HEATER) FROM=0m TO=9m
 .meas TRAN V_heater_supply AVG V(V12V_PROT,HEAT_MINUS) FROM=1m TO=9m
-.meas TRAN V_rref_meas AVG V(Q1_EMITTER) FROM=9m TO=10m
+.meas TRAN V_rref_meas AVG V(HEAT_MINUS,REF_NODE) FROM=9m TO=10m
 .meas TRAN P_heater_avg AVG (-V(V12V_PROT,HEAT_MINUS)*I(R_HEATER)) FROM=0 TO=10m
-.meas TRAN t_transition FIND time WHEN V(GPIO_M1)=1.65 RISE=1
+.meas TRAN t_transition FIND time WHEN V(GPIO10_M1)=1.65 RISE=1
 
 .backanno
 .end

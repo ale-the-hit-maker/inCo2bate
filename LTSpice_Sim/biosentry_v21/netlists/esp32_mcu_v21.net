@@ -1,22 +1,25 @@
 * ============================================================
 * BioSentry IncuSense v2.1 — ESP32-C3-MINI-1 MCU Model
 * ECO-v2.1-001: Heater PWM GPIO2 → GPIO3
+* MOD-MCU-1: GPIO2 riassegnato a V_MON ADC (divider 100k/22k da 12V)
+* MOD-MCU-2: GPIO10 aggiunto come Heater Regime Selector (M1 gate)
 * Ref: BioSentry PDF §2.7 + errata corrige pin mapping
 * ============================================================
 *
-* PIN MAPPING v2.1 (post ECO-v2.1-001):
+* PIN MAPPING v2.1 (definitivo, validato):
 *   GPIO0  = ADC1_CH0  → TIA_OUT (lettura sensore MOx)
 *   GPIO1  = PWM LEDC  → Ventola DC (25 kHz)
-*   GPIO2  = NC        → Strapping pin, non connesso
-*                         (pull-up interno garantisce HIGH al boot)
+*   GPIO2  = ADC1_CH2  → V_MON (monitoraggio 12V, divider 100k/22k → 2.16V)
+*                         Boot-safety: 2.16V > Vih(1.65V) → strapping HIGH garantito
 *   GPIO3  = PWM LEDC  → Heater Si2302 (1 kHz) ← ECO-v2.1-001
 *   GPIO4  = SPI SCK   → W5500 (via R_SCK 33Ω)
 *   GPIO5  = SPI CS    → W5500
 *   GPIO6  = SPI MISO  ← W5500
 *   GPIO7  = SPI MOSI  → W5500 (via R_MOSI 33Ω)
-*   GPIO8  = I2C SDA   → SHT41 (pull-up 4.7kΩ)
-*   GPIO9  = I2C SCL   → SHT41 (pull-up 4.7kΩ)
-*   GPIO20 = UART TX   → J2 debug
+*   GPIO8  = I2C SDA   → SHT41 (pull-up 4.7kΩ a V3V3)
+*   GPIO9  = I2C SCL   → SHT41 (pull-up 4.7kΩ a V3V3)
+*   GPIO10 = GPIO out  → M1 Gate Selector (pull-down esterno 10kΩ → boot OFF)
+*   GPIO20 = UART TX   → J2 debug (115200 baud)
 *   GPIO21 = UART RX   ← J2 debug
 *
 * MOTIVAZIONE ECO-v2.1-001:
@@ -25,6 +28,9 @@
 *   Il pull-down di sicurezza sul gate del MOSFET heater
 *   forzerebbe GPIO2 LOW → Download Mode permanente.
 *   GPIO3 è pin neutro, compatibile con LEDC per PWM hardware.
+*   GPIO2 viene invece usato per V_MON: il divider 100k/22k
+*   porta 12V → 2.16V, che è > Vih(1.65V) → strapping HIGH garantito
+*   senza componenti aggiuntivi.
 * ============================================================
 
 * === ALIMENTAZIONE MCU ===
@@ -48,11 +54,16 @@ C_ADC0 GPIO0_ADC 0 5p
 .param fan_duty=0.50
 V_GPIO1 GPIO1_FAN 0 PULSE(0 3.3 5m 100n 100n {fan_duty/25k} {1/25k})
 
-* === GPIO2: NON CONNESSO (strapping pin) ===
-* Pull-up interno ESP32 garantisce HIGH al boot.
-* Pin lasciato NC o come test pad isolato.
-R_GPIO2_PU V3V3_INT GPIO2_NC 45k
-* 45kΩ modella il pull-up interno tipico dell'ESP32-C3
+* === GPIO2: V_MON ADC (monitoraggio 12V) ===
+* Divider 100k/22k da V12V → 2.16V.
+* Boot-safety: 2.16V > Vih(1.65V) → strapping HIGH garantito.
+* Dopo il boot, firmware configura GPIO2 come ADC1_CH2.
+* V_MON range: 0–16.6V con risoluzione ~4mV/bit (ADC 12bit, FS=3.0V).
+V_12V_MON V12V_MON_SRC 0 12
+R_VD1 V12V_MON_SRC GPIO2_VMON 100k
+R_VD2 GPIO2_VMON 0 22k
+R_ADC2_IN GPIO2_VMON 0 13MEG
+C_ADC2_IN GPIO2_VMON 0 5p
 
 * === GPIO3: PWM HEATER (1 kHz, duty 10%) — ECO-v2.1-001 ===
 * Avvio dopo 8s (sequenza sfalsata), PID soft-start
@@ -75,6 +86,14 @@ R_PU_SDA V3V3_INT GPIO8_SDA 4.7k
 R_PU_SCL V3V3_INT GPIO9_SCL 4.7k
 C_I2C_SDA GPIO8_SDA 0 30p
 C_I2C_SCL GPIO9_SCL 0 30p
+
+* === GPIO10: HEATER REGIME SELECTOR (M1 gate) ===
+* Pull-down esterno 10kΩ → M1 OFF al boot (heater sicuro).
+* Supply: HIGH (9ms); Measurement: LOW (1ms) in ciclo 10ms.
+* Avvio dopo 8s (sequenza sfalsata con ventola).
+* Al Power-On Reset: GPIO10 Hi-Z + pull-down → M1 OFF → nessuna potenza all'heater.
+V_GPIO10 GPIO10_M1 0 PULSE(0 3.3 8m 1u 1u 9m 10m)
+R_M1_PD GPIO10_M1 0 10k
 
 * === GPIO20: UART TX (debug) ===
 * Modellato come uscita logica idle HIGH

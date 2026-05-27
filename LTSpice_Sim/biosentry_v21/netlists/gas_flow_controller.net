@@ -10,9 +10,12 @@
 
 * --- Alimentazione 5V (dal buck converter) ---
 * Modellata con impedenza serie per simulare il buck
+* FIX-GFC-1: R_BUCK_OUT e L_BUCK_OUT ora in SERIE (modello fisicamente corretto).
+* Prima erano entrambi tra V5V_IDEAL e V5V (parallelo), il che è fisicamente errato.
+* La R di serie da 0.1Ω aggiunge ~8mV di caduta a 80mA: trascurabile, ma corretto.
 V_5V V5V_IDEAL 0 5
-R_BUCK_OUT V5V_IDEAL V5V 0.1
-L_BUCK_OUT V5V_IDEAL V5V 1u
+R_BUCK_OUT V5V_IDEAL V5V_MID 0.1
+L_BUCK_OUT V5V_MID V5V 1u
 
 * --- Rete di disaccoppiamento locale ventola ---
 C1_FAN V5V 0 100n

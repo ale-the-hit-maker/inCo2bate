@@ -1,11 +1,14 @@
 * ============================================================
 * BioSentry IncuSense — Modulo Alimentazione + Connessione Ethernet
-* Revisione: 2025-06 (v2.0)
+* Revisione: 2025-06 (v2.1)
 * Ref: BioSentry System PDF §2.7, §2.8
 * ============================================================
 * Catena: 12V_IN -> TVS -> Polyfuse -> Buck 12->5V -> LDO 5->3.3V
-* Carichi: ESP32 (80mA), W5500 (130mA burst), op-amp (0.1mA)
+* Carichi: W5500 (130mA burst su V3V3), ESP32 (80mA su V5V), op-amp (0.1mA)
 * Heater su rail 12V separato (impulsi PWM)
+* MOD-ETH-1: rimossi I_ESP32_DC e I_ESP32_BURST da V3V3 (erano errati:
+*            ESP32 è alimentato a 5V, carico modellato su V5V come R_LOAD_ESP).
+* MOD-ETH-2: GPIO5_ADC → GPIO2_VMON per V_MON divisore 12V.
 * ============================================================
 
 * --- Sorgente 12V DC (PoE splitter output) ---
@@ -65,11 +68,8 @@ C8_BULK V3V3 0 470u IC=3.3 Rser=0.08
 C5_LDO_IN V5V_OUT 0 10u Rser=0.01
 
 * === CARICHI SUL RAIL 3.3V ===
-
-* --- ESP32-C3 (modello: corrente costante 80mA + burst WiFi) ---
-* Burst WiFi: 160mA per 5ms ogni 100ms
-I_ESP32_DC V3V3 0 80m
-I_ESP32_BURST V3V3 0 PULSE(0 80m 10m 100u 100u 5m 100m)
+* NOTA: ESP32 è alimentato a 5V (regolatore interno 5V→3.3V).
+* Il suo carico è modellato SOLO su V5V (R_LOAD_ESP su V5V_OUT). NON su V3V3.
 
 * --- W5500 Ethernet (modello: 30mA idle + 130mA TX burst) ---
 * TX burst: 130mA per 2ms ogni 30ms
@@ -98,10 +98,12 @@ R_HEATER_LOAD HTR_DRAIN 0 {Rh}
 .model SW_IDEAL SW(VT=6 VH=0.5 RON=0.12 ROFF=10MEG)
 
 * === MONITORAGGIO TENSIONE 12V (divisore) ===
+* V_MON: GPIO2 (ADC1_CH2). Divider 100k/22k: Vout=2.16V.
+* Soddisfa strapping HIGH al boot (2.16V > 1.65V).
 R_VD1 V12V_PROT V_MON 100k
 R_VD2 V_MON 0 22k
-R_ADCV V_MON GPIO5_ADC 1k
-C_MON GPIO5_ADC 0 100p
+R_ADCV V_MON GPIO2_VMON 1k
+C_MON GPIO2_VMON 0 100p
 
 * --- Direttive di simulazione ---
 .tran 0 120m 0 1u
@@ -114,7 +116,7 @@ C_MON GPIO5_ADC 0 100p
 .meas TRAN V12V_ripple PP V(V12V_PROT) FROM=50m TO=120m
 .meas TRAN V3V3_drop_w5500 MIN V(V3V3) FROM=15m TO=20m
 .meas TRAN I_12V_avg AVG I(V_12V_DC) FROM=20m TO=120m
-.meas TRAN V_mon_avg AVG V(GPIO5_ADC) FROM=50m TO=120m
+.meas TRAN V_mon_avg AVG V(GPIO2_VMON) FROM=50m TO=120m
 
 * --- Analisi parametrica: cold start heater ---
 .step param Rh list 10 14 18

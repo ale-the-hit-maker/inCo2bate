@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "author": "BioSentry v2.1",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-c3-devkitm-1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-potentiometer", "id": "pot_tia", "top": -120, "left": -220, "attrs": {} },
+    { "type": "wokwi-potentiometer", "id": "pot_vmon", "top": 80, "left": -220, "attrs": {} },
+    { "type": "wokwi-led", "id": "led_fan", "top": -100, "left": 200, "attrs": { "color": "blue", "label": "Ventola (GPIO1)" } },
+    { "type": "wokwi-led", "id": "led_heater", "top": -20, "left": 200, "attrs": { "color": "red", "label": "Q1 Heater (GPIO3)" } },
+    { "type": "wokwi-led", "id": "led_regime", "top": 60, "left": 200, "attrs": { "color": "orange", "label": "M1 Regime (GPIO10)" } }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "pot_tia:GND", "esp:GND", "black", [ "v0" ] ],
+    [ "pot_tia:VCC", "esp:3V3", "red", [ "v0" ] ],
+    [ "pot_tia:SIG", "esp:0", "green", [ "v0" ] ],
+    [ "pot_vmon:GND", "esp:GND", "black", [ "v0" ] ],
+    [ "pot_vmon:VCC", "esp:3V3", "red", [ "v0" ] ],
+    [ "pot_vmon:SIG", "esp:2", "yellow", [ "v0" ] ],
+    [ "led_fan:A", "esp:1", "blue", [ "v0" ] ],
+    [ "led_fan:C", "esp:GND", "black", [ "v0" ] ],
+    [ "led_heater:A", "esp:3", "red", [ "v0" ] ],
+    [ "led_heater:C", "esp:GND", "black", [ "v0" ] ],
+    [ "led_regime:A", "esp:10", "orange", [ "v0" ] ],
+    [ "led_regime:C", "esp:GND", "black", [ "v0" ] ]
+  ]
+}
