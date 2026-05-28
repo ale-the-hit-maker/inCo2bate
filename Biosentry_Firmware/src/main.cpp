@@ -39,14 +39,17 @@
 //
 // L'hub_id è derivato a compile-time dai tre identificatori esistenti.
 // Il backend si aspetta i topic nella forma:
-//   incusense/hub/{hub_id}/measurements   <- pubblica misure
-//   incusense/hub/{hub_id}/status         <- pubblica heartbeat / LWT
-//   incusense/hub/{hub_id}/commands       <- sottoscrive comandi
-//   incusense/hub/{hub_id}/ack            <- pubblica ACK calibrazione
+//   incusense/hubs/{hub_id}/telemetry   <- pubblica misure
+//   incusense/hubs/{hub_id}/status      <- pubblica heartbeat / LWT
+//   incusense/hubs/{hub_id}/commands    <- sottoscrive comandi
+//   incusense/hubs/{hub_id}/ack         <- pubblica ACK calibrazione
 //
 // Il device_id identifica il sensore CO2 specifico all'interno dell'hub.
 // ===================================================================
-#define MQTT_BROKER_IP     "192.168.1.100"
+#ifndef MQTT_BROKER_HOST
+#define MQTT_BROKER_HOST   "192.168.1.100"
+#endif
+
 #define MQTT_BROKER_PORT   1883
 
 #define MQTT_LAB_ID        "lab_alpha"
@@ -59,10 +62,10 @@
 #define MQTT_DEVICE_ID MQTT_HUB_ID "-co2"
 
 // [ADATTATO] Topic compile-time — non più buildMqttTopic() a runtime
-#define TOPIC_MEASUREMENTS "incusense/hub/" MQTT_HUB_ID "/measurements"
-#define TOPIC_STATUS       "incusense/hub/" MQTT_HUB_ID "/status"
-#define TOPIC_COMMANDS     "incusense/hub/" MQTT_HUB_ID "/commands"
-#define TOPIC_ACK          "incusense/hub/" MQTT_HUB_ID "/ack"
+#define TOPIC_MEASUREMENTS "incusense/hubs/" MQTT_HUB_ID "/telemetry"
+#define TOPIC_STATUS       "incusense/hubs/" MQTT_HUB_ID "/status"
+#define TOPIC_COMMANDS     "incusense/hubs/" MQTT_HUB_ID "/commands"
+#define TOPIC_ACK          "incusense/hubs/" MQTT_HUB_ID "/ack"
 
 // Payload LWT pubblicato dal broker se il dispositivo si disconnette
 // in modo anomalo (caduta link, watchdog): il backend lo riceve su TOPIC_STATUS
@@ -102,9 +105,9 @@
 struct Payload {
     uint32_t ts;
     float    co2_ppm;
-    float    heater_temp;   // serializzato come "heater_temp_c"
-    float    env_temp;      // serializzato come "temperature_c"
-    float    env_hum;       // serializzato come "humidity_rh"
+    float    heater_temp;   // serializzato come "heater_temp"
+    float    env_temp;      // serializzato come "env_temp"
+    float    env_hum;       // serializzato come "env_hum"
     float    rail_12v;
     uint16_t raw_adc;       // [ADATTATO] valore ADC grezzo 12-bit
     float    sensor_response; // [ADATTATO] |I_air - I| / I_air
@@ -156,12 +159,13 @@ void Task_Sensing(void *pvParameters);
 void Task_NetworkAndFS(void *pvParameters);
 
 // [ADATTATO] buildMqttTopic() rimossa: sostituita dai #define compile-time
-bool connectEthernet();
+bool connectNetwork();
 bool connectMqtt();
 void publishTelemetry(const Payload &payload);
 void appendBacklog(const Payload &payload);
 bool flushBacklog();
 void publishStatus(const char *message);
+uint32_t currentEpochSeconds();
 
 // [ADATTATO] Nuove funzioni per il contratto IncuSense
 void mqttCallback(char *topic, byte *payload, unsigned int length);
@@ -171,18 +175,42 @@ void publishAck(long eventId, const char *command, const char *status);
 // Funzioni di rete e filesystem
 // ===================================================================
 
-bool connectEthernet() {
+bool connectNetwork() {
+    if (Ethernet.linkStatus() == LinkON) {
+        Ethernet.maintain();
+        return true;
+    }
+
     uint8_t mac[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
     IPAddress localIp(192, 168, 1, 101);
+    IPAddress dns(192, 168, 1, 1);
+    IPAddress gateway(192, 168, 1, 1);
+    IPAddress subnet(255, 255, 255, 0);
 
     Ethernet.init(PIN_SPI_CS);
-    SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI);
-    Ethernet.begin(mac, localIp);
+    SPI.begin(PIN_SPI_SCK, PIN_SPI_MISO, PIN_SPI_MOSI, PIN_SPI_CS);
+
+    Serial.println("[NET] Initializing wired Ethernet");
+    int dhcpOk = Ethernet.begin(mac);
+    if (dhcpOk == 0) {
+        Serial.println("[NET] DHCP failed, using static Ethernet address");
+        Ethernet.begin(mac, localIp, dns, gateway, subnet);
+    }
+
     delay(1000);
 
-    if (Ethernet.linkStatus() != LinkON) {
+    if (Ethernet.hardwareStatus() == EthernetNoHardware) {
+        Serial.println("[NET] Ethernet controller not found. Check W5500 wiring and CS pin.");
         return false;
     }
+
+    if (Ethernet.linkStatus() != LinkON) {
+        Serial.println("[NET] Ethernet link is down. Check cable/switch/PoE injector.");
+        return false;
+    }
+
+    Serial.printf("[NET] Ethernet connected. IP=%s broker=%s:%d\n",
+                  Ethernet.localIP().toString().c_str(), MQTT_BROKER_HOST, MQTT_BROKER_PORT);
     return true;
 }
 
@@ -202,13 +230,13 @@ bool connectMqtt() {
     char clientId[48];
     snprintf(clientId, sizeof(clientId), "biosentry-%s", MQTT_NODE_ID);
 
-    mqttClient.setServer(MQTT_BROKER_IP, MQTT_BROKER_PORT);
+    mqttClient.setServer(MQTT_BROKER_HOST, MQTT_BROKER_PORT);
     mqttClient.setKeepAlive(10);
 
     // [ADATTATO] Last Will Testament: il broker pubblica automaticamente
     // "offline" su TOPIC_STATUS se il dispositivo perde la connessione
     // in modo anomalo (timeout keepalive, reset hardware, cavo scollegato).
-    // Il backend lo intercetta su incusense/hub/{hub_id}/status.
+    // Il backend lo intercetta su incusense/hubs/{hub_id}/status.
     bool connected = mqttClient.connect(
         clientId,
         nullptr,               // username (non usato in questa versione)
@@ -223,7 +251,11 @@ bool connectMqtt() {
         // [ADATTATO] Sottoscrive al topic comandi per ricevere
         // ZERO_CAL e OFFSET_CAL dal backend (RF-09, RF-10)
         bool subOk = mqttClient.subscribe(TOPIC_COMMANDS, 1);
-        Serial.printf("[MQTT] Connected. Sub commands: %s\n", subOk ? "OK" : "FAIL");
+        Serial.printf("[MQTT] Connected to %s:%d. Sub commands: %s\n",
+                      MQTT_BROKER_HOST, MQTT_BROKER_PORT, subOk ? "OK" : "FAIL");
+    } else {
+        Serial.printf("[MQTT] Connect failed. state=%d broker=%s:%d\n",
+                      mqttClient.state(), MQTT_BROKER_HOST, MQTT_BROKER_PORT);
     }
     return connected;
 }
@@ -299,7 +331,7 @@ void mqttCallback(char *topic, byte *rawPayload, unsigned int length) {
 // ===================================================================
 // [ADATTATO] publishAck — pubblica l'ACK di calibrazione
 //
-// Topic: incusense/hub/{hub_id}/ack
+// Topic: incusense/hubs/{hub_id}/ack
 // Payload: {"hub_id":"...","command":"ZERO_CAL","status":"OK","event_id":42}
 //
 // Chiamato da Task_NetworkAndFS dopo aver svuotato ackQueue,
@@ -311,7 +343,7 @@ void publishAck(long eventId, const char *command, const char *status) {
     doc["command"]  = command;
     doc["status"]   = status;
     if (eventId >= 0) doc["event_id"] = eventId;
-    doc["ts"]       = (uint32_t)time(nullptr);
+    doc["ts"]       = currentEpochSeconds();
 
     char buffer[256];
     serializeJson(doc, buffer, sizeof(buffer));
@@ -337,19 +369,16 @@ void appendBacklog(const Payload &payload) {
         Serial.println("[BACKLOG] open append failed");
         return;
     }
-    // [ADATTATO] Tutti i campi allineati al contratto JSON del backend
-    char line[320];
+    char line[240];
     int len = snprintf(line, sizeof(line),
-        "{\"hub_id\":\"%s\",\"device_id\":\"%s\","
-        "\"timestamp_utc\":%u,\"co2_ppm\":%.2f,"
-        "\"heater_temp_c\":%.2f,\"temperature_c\":%.2f,"
-        "\"humidity_rh\":%.2f,\"rail_12v\":%.2f,"
-        "\"raw_adc\":%u,\"sensor_response\":%.4f}\n",
-        MQTT_HUB_ID, MQTT_DEVICE_ID,
-        payload.ts, payload.co2_ppm,
-        payload.heater_temp, payload.env_temp,
-        payload.env_hum, payload.rail_12v,
-        payload.raw_adc, payload.sensor_response);
+        "{\"ts\":%u,\"co2_ppm\":%.2f,\"heater_temp\":%.2f,"
+        "\"env_temp\":%.2f,\"env_hum\":%.2f,\"rail_12v\":%.2f}\n",
+        payload.ts,
+        payload.co2_ppm,
+        payload.heater_temp,
+        payload.env_temp,
+        payload.env_hum,
+        payload.rail_12v);
 
     file.write((const uint8_t *)line, len);
     file.close();
@@ -388,37 +417,30 @@ bool flushBacklog() {
 // ===================================================================
 // [ADATTATO] publishTelemetry — JSON allineato al contratto del backend
 //
-// Campi pubblicati su TOPIC_MEASUREMENTS (incusense/hub/{hub_id}/measurements):
-//   hub_id, device_id     → identità (auto-registrazione backend)
-//   timestamp_utc         → epoch seconds UTC
+// Campi pubblicati su TOPIC_MEASUREMENTS (incusense/hubs/{hub_id}/telemetry):
+//   ts                    → epoch seconds UTC
 //   co2_ppm               → CO2 calibrata in ppm
-//   temperature_c         → temperatura ambiente °C (SHT41)
-//   humidity_rh           → umidità relativa % (SHT41)
-//   heater_temp_c         → temperatura substrato sensore (PID)
+//   env_temp              → temperatura ambiente °C (SHT41)
+//   env_hum               → umidità relativa % (SHT41)
+//   heater_temp           → temperatura substrato sensore (PID)
 //   rail_12v              → tensione rail 12V (diagnostica)
-//   raw_adc               → lettura ADC grezza 12-bit (debug/ricerca)
-//   sensor_response       → risposta normalizzata |I_air-I|/I_air
 // ===================================================================
 void publishTelemetry(const Payload &payload) {
-    // [ADATTATO] Documento più grande: ~350 byte serializzato
-    StaticJsonDocument<400> doc;
-    doc["hub_id"]        = MQTT_HUB_ID;
-    doc["device_id"]     = MQTT_DEVICE_ID;
-    doc["timestamp_utc"] = payload.ts;
-    doc["co2_ppm"]       = serialized(String(payload.co2_ppm, 2));
-    doc["temperature_c"] = serialized(String(payload.env_temp, 2));
-    doc["humidity_rh"]   = serialized(String(payload.env_hum, 2));
-    doc["heater_temp_c"] = serialized(String(payload.heater_temp, 2));
-    doc["rail_12v"]      = serialized(String(payload.rail_12v, 3));
-    doc["raw_adc"]       = payload.raw_adc;
-    doc["sensor_response"] = serialized(String(payload.sensor_response, 4));
+    StaticJsonDocument<256> doc;
+    doc["ts"]          = payload.ts;
+    doc["co2_ppm"]     = serialized(String(payload.co2_ppm, 2));
+    doc["heater_temp"] = serialized(String(payload.heater_temp, 2));
+    doc["env_temp"]    = serialized(String(payload.env_temp, 2));
+    doc["env_hum"]     = serialized(String(payload.env_hum, 2));
+    doc["rail_12v"]    = serialized(String(payload.rail_12v, 3));
 
     char buffer[MQTT_BUFFER_SIZE];
     serializeJson(doc, buffer, sizeof(buffer));
 
-    // [ADATTATO] Pubblica su TOPIC_MEASUREMENTS (era buildMqttTopic "telemetry")
     if (!mqttClient.publish(TOPIC_MEASUREMENTS, buffer)) {
         appendBacklog(payload);
+    } else {
+        Serial.printf("[MQTT] Published telemetry -> %s: %s\n", TOPIC_MEASUREMENTS, buffer);
     }
 }
 
@@ -432,13 +454,21 @@ void publishStatus(const char *message) {
     StaticJsonDocument<128> doc;
     doc["hub_id"] = MQTT_HUB_ID;  // [ADATTATO] aggiunto per coerenza
     doc["status"] = message;
-    doc["ts"]     = (uint32_t)time(nullptr);
+    doc["ts"]     = currentEpochSeconds();
 
     char buffer[128];
     serializeJson(doc, buffer, sizeof(buffer));
 
     // [ADATTATO] Usa TOPIC_STATUS (era buildMqttTopic "status")
     mqttClient.publish(TOPIC_STATUS, buffer);
+}
+
+uint32_t currentEpochSeconds() {
+    time_t now = time(nullptr);
+    if (now > 1000000000) {
+        return (uint32_t)now;
+    }
+    return 1700000000UL + (millis() / 1000UL);
 }
 
 // ===================================================================
@@ -591,7 +621,7 @@ void Task_Sensing(void *pvParameters) {
         // 6. Impacchettamento  [ADATTATO: aggiunto raw_adc e sensor_response]
         // -----------------------------------------------------------
         Payload payload;
-        payload.ts              = (uint32_t)time(nullptr);
+        payload.ts              = currentEpochSeconds();
         payload.co2_ppm         = co2ppm;
         payload.heater_temp     = heaterTemp;
         payload.env_temp        = env_t;
@@ -632,7 +662,7 @@ void Task_NetworkAndFS(void *pvParameters) {
         bool gotPayload = (xQueueReceive(payloadQueue, &payload,
                                          pdMS_TO_TICKS(100)) == pdTRUE);
 
-        bool networkOk = (Ethernet.linkStatus() == LinkON && connectMqtt());
+        bool networkOk = (connectNetwork() && connectMqtt());
 
         if (networkOk) {
             // [ADATTATO] loop() elabora i messaggi MQTT in arrivo
@@ -716,8 +746,8 @@ void setup() {
     else            Serial.println("[FS] LittleFS mounted successfully");
 
     // Network
-    if (!connectEthernet()) {
-        Serial.println("[NET] Link down. OFFLINE backlog mode active");
+    if (!connectNetwork()) {
+        Serial.println("[NET] Offline backlog mode active");
     }
 
     // Code FreeRTOS
