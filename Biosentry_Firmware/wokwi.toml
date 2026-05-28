@@ -1,7 +1,10 @@
 [wokwi]
 version = 1
-filesystem = ".pio/build/esp32-c3-devkitm-1/littlefs.bin"
-firmware = ".pio/build/esp32-c3-devkitm-1/firmware.bin"
-partitions = ".pio/build/esp32-c3-devkitm-1/partitions.bin"
+# [ADATTATO] Punto ai binari della build di simulazione (esp32-c3-devkitm-1-sim)
+# che include la flag WOKWI_SIM e usa la mock Ethernet.
+# Per hardware reale, commentare queste righe per usare la build default.
+filesystem = ".pio/build/esp32-c3-devkitm-1-sim/littlefs.bin"
+firmware = ".pio/build/esp32-c3-devkitm-1-sim/firmware.bin"
+partitions = ".pio/build/esp32-c3-devkitm-1-sim/partitions.bin"
 debug = true
 gdbServerPort = 3333

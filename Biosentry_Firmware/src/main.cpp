@@ -2,7 +2,14 @@
 #include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_SHT4x.h>
+
+// [ADATTATO] Mock Ethernet per Wokwi simulation (se WOKWI_SIM è definito)
+#ifdef WOKWI_SIM
+#include "ethernet_mock.h"
+#else
 #include <Ethernet.h>
+#endif
+
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
@@ -129,6 +136,11 @@ struct AckMessage {
 static QueueHandle_t payloadQueue = NULL;
 // [ADATTATO] Coda per ACK calibrazione (dimensione 4: raramente ne arrivano più di 1)
 static QueueHandle_t ackQueue     = NULL;
+
+// [ADATTATO] Istanza globale Ethernet (per WOKWI_SIM, è mock; per hardware, è reale)
+#ifdef WOKWI_SIM
+EthernetMock Ethernet;
+#endif
 
 static EthernetClient ethClient;
 static PubSubClient   mqttClient(ethClient);

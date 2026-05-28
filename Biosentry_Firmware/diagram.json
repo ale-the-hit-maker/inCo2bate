@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "author": "BioSentry v2.1",
+  "author": "BioSentry v2.2 (W5500 Ethernet + PoE)",
   "editor": "wokwi",
   "parts": [
     { "type": "board-esp32-c3-devkitm-1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
     { "type": "wokwi-potentiometer", "id": "pot_tia", "top": -120, "left": -220, "attrs": {} },
     { "type": "wokwi-potentiometer", "id": "pot_vmon", "top": 80, "left": -220, "attrs": {} },
-    { "type": "wokwi-led", "id": "led_fan", "top": -100, "left": 200, "attrs": { "color": "blue", "label": "Ventola (GPIO1)" } },
-    { "type": "wokwi-led", "id": "led_heater", "top": -20, "left": 200, "attrs": { "color": "red", "label": "Q1 Heater (GPIO3)" } },
+    { "type": "wokwi-led", "id": "led_fan", "top": -100, "left": 200, "attrs": { "color": "blue", "label": "Ventola PWM (GPIO1)" } },
+    { "type": "wokwi-led", "id": "led_heater", "top": -20, "left": 200, "attrs": { "color": "red", "label": "Q1 Heater PWM (GPIO3)" } },
     { "type": "wokwi-led", "id": "led_regime", "top": 60, "left": 200, "attrs": { "color": "orange", "label": "M1 Regime (GPIO10)" } }
   ],
   "connections": [
@@ -25,5 +25,30 @@
     [ "led_heater:C", "esp:GND", "black", [ "v0" ] ],
     [ "led_regime:A", "esp:10", "orange", [ "v0" ] ],
     [ "led_regime:C", "esp:GND", "black", [ "v0" ] ]
-  ]
+  ],
+  "notes": {
+    "W5500_SPI_Interface": {
+      "description": "W5500 Ethernet module connected via SPI (not visible in Wokwi simulator)",
+      "SPI_Pins": {
+        "SCK": "GPIO 4",
+        "MOSI": "GPIO 7",
+        "MISO": "GPIO 6",
+        "CS": "GPIO 5",
+        "VCC": "3.3V",
+        "GND": "GND"
+      },
+      "Hardware_Connection": "RJ45 Ethernet to PoE injector",
+      "Power": "PoE provides 3.3V (logic) + 12V (heater/fan auxiliary power)",
+      "Wokwi_Support": "W5500 not yet simulated; use 'esp32-c3-devkitm-1-sim' build target for mock Ethernet testing"
+    },
+    "I2C_Interface": {
+      "description": "SHT41 humidity/temperature sensor (not shown; add if needed)",
+      "SDA": "GPIO 8",
+      "SCL": "GPIO 9"
+    },
+    "ADC_Inputs": {
+      "TIA_Current": "GPIO 0 (analog)",
+      "Vmon_Rail12V": "GPIO 2 (analog)"
+    }
+  }
 }
