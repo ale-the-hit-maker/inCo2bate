@@ -78,6 +78,20 @@ public class Controllers {
                 .toList();
     }
 
+    @GetMapping("/measurements/history")
+    public List<Dtos.HistoryResponse> history() {
+        return measurementRepository.find6MonthHistory()
+                .stream()
+                .map(p -> new Dtos.HistoryResponse(
+                        p.getRecordedAt(),
+                        p.getCo2Ppm() != null ? p.getCo2Ppm() : 0.0,
+                        p.getHeaterTemp() != null ? p.getHeaterTemp() : 0.0,
+                        p.getEnvTemp() != null ? p.getEnvTemp() : 0.0,
+                        p.getEnvHum() != null ? p.getEnvHum() : 0.0,
+                        p.getRail12v() != null ? p.getRail12v() : 0.0))
+                .toList();
+    }
+
     @GetMapping("/alerts")
     public List<Dtos.AlertResponse> alerts() {
         return alertService.recentAlerts();

@@ -42,6 +42,9 @@
         latestMeasurements(limit = 100) {
             return request(`/api/measurements/latest?limit=${encodeURIComponent(limit)}`);
         },
+        history() {
+            return request('/api/measurements/history');
+        },
         alerts() {
             return request('/api/alerts');
         }

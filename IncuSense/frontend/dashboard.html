@@ -10,52 +10,66 @@
     <header class="topbar">
         <div>
             <span class="eyebrow">IncuSense</span>
-            <h1>Incubator Telemetry</h1>
+            <h1>Telemetry Overview</h1>
         </div>
-        <button id="logout-button" class="ghost-button" type="button">Logout</button>
+        <button id="logout-button" class="ghost-button" type="button">Terminate Session</button>
     </header>
 
     <main class="dashboard">
         <section class="status-strip" aria-live="polite">
-            <article>
-                <span>CO2</span>
-                <strong id="co2-value">--</strong>
-                <small>ppm</small>
+            <article class="metric-card co2">
+                <span>CO2 Level</span>
+                <div><strong id="co2-value">--</strong> <small>ppm</small></div>
             </article>
-            <article>
+            <article class="metric-card env">
                 <span>Environment</span>
-                <strong id="temp-value">--</strong>
-                <small>C</small>
+                <div><strong id="temp-value">--</strong> <small>°C</small></div>
             </article>
-            <article>
+            <article class="metric-card hum">
                 <span>Humidity</span>
-                <strong id="hum-value">--</strong>
-                <small>%</small>
+                <div><strong id="hum-value">--</strong> <small>%</small></div>
             </article>
-            <article>
+            <article class="metric-card rail">
                 <span>12V Rail</span>
-                <strong id="rail-value">--</strong>
-                <small>V</small>
+                <div><strong id="rail-value">--</strong> <small>V</small></div>
             </article>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <h2>6-Month Historical Trend</h2>
+                <div class="chart-controls">
+                    <select id="chart-metric-selector">
+                        <option value="co2Ppm">CO2 Level (ppm)</option>
+                        <option value="heaterTemp">Heater Temp (°C)</option>
+                        <option value="envTemp">Env Temp (°C)</option>
+                        <option value="envHum">Humidity (%)</option>
+                        <option value="rail12v">12V Rail (V)</option>
+                    </select>
+                </div>
+            </div>
+            <div style="position: relative; height:320px; width:100%">
+                <canvas id="history-chart"></canvas>
+            </div>
         </section>
 
         <section class="content-grid">
             <div class="panel wide">
                 <div class="panel-header">
                     <h2>Latest Measurements</h2>
-                    <span id="last-update">Waiting for telemetry</span>
+                    <span id="last-update" class="neon-text">Awaiting signal...</span>
                 </div>
                 <div class="table-wrap">
                     <table>
                         <thead>
                         <tr>
-                            <th>Time</th>
-                            <th>Hub</th>
-                            <th>CO2 ppm</th>
-                            <th>Heater C</th>
-                            <th>Env C</th>
-                            <th>Humidity %</th>
-                            <th>12V</th>
+                            <th>Timestamp</th>
+                            <th>Hub ID</th>
+                            <th>CO2 (ppm)</th>
+                            <th>Heater (°C)</th>
+                            <th>Env (°C)</th>
+                            <th>Hum (%)</th>
+                            <th>12V Rail</th>
                         </tr>
                         </thead>
                         <tbody id="measurements-body"></tbody>
@@ -65,13 +79,14 @@
 
             <div class="panel">
                 <div class="panel-header">
-                    <h2>Alerts</h2>
+                    <h2>System Alerts</h2>
                 </div>
                 <ul id="alerts-list" class="alerts-list"></ul>
             </div>
         </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/dashboard.js"></script>
 </body>

@@ -62,6 +62,15 @@ public final class Dtos {
                                       double humidityOffset, double rail12vOffset) {
     }
 
+    public record HistoryResponse(
+            Instant recordedAt,
+            double co2Ppm,
+            double heaterTemp,
+            double envTemp,
+            double envHum,
+            double rail12v) {
+    }
+
     public record AlertResponse(String hubKey, String level, String message, Instant createdAt) {
     }
 }

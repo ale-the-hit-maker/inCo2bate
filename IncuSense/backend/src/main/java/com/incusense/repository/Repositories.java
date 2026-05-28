@@ -28,5 +28,26 @@ public final class Repositories {
 
         @Query("select m from Measurement m join fetch m.hub where m.hub.hubKey = :hubKey order by m.id.recordedAt desc")
         List<Measurement> findByHubHubKeyOrderByIdRecordedAtDesc(String hubKey, Pageable pageable);
+
+        @Query(value = "SELECT time_bucket(INTERVAL '1 day', m.recorded_at) AS recordedAt, " +
+                "AVG(m.co2_ppm) AS co2Ppm, " +
+                "AVG(m.heater_temp) AS heaterTemp, " +
+                "AVG(m.env_temp) AS envTemp, " +
+                "AVG(m.env_hum) AS envHum, " +
+                "AVG(m.rail_12v) AS rail12v " +
+                "FROM measurements m " +
+                "WHERE m.recorded_at >= NOW() - INTERVAL '6 months' " +
+                "GROUP BY recordedAt " +
+                "ORDER BY recordedAt ASC", nativeQuery = true)
+        List<HistoryProjection> find6MonthHistory();
+    }
+
+    public interface HistoryProjection {
+        java.time.Instant getRecordedAt();
+        Double getCo2Ppm();
+        Double getHeaterTemp();
+        Double getEnvTemp();
+        Double getEnvHum();
+        Double getRail12v();
     }
 }

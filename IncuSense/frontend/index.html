@@ -10,8 +10,8 @@
     <main class="login-shell">
         <section class="login-panel">
             <div class="brand-mark">IS</div>
-            <h1>IncuSense</h1>
-            <p>Secure telemetry dashboard for incubator sensing hubs.</p>
+            <h1>IncuSense System</h1>
+            <p>Secure telemetry gateway for incubator sensing hubs. Please authenticate.</p>
             <form id="login-form" class="login-form">
                 <label>
                     Username
@@ -21,7 +21,7 @@
                     Password
                     <input name="password" type="password" autocomplete="current-password" value="admin123" required>
                 </label>
-                <button type="submit">Sign in</button>
+                <button type="submit">Establish Connection</button>
                 <output id="login-error" class="error-message"></output>
             </form>
         </section>
@@ -33,11 +33,15 @@
             const form = new FormData(event.currentTarget);
             const output = document.getElementById('login-error');
             output.textContent = '';
+            const btn = event.currentTarget.querySelector('button');
+            const originalText = btn.textContent;
+            btn.textContent = 'Authenticating...';
             try {
                 await IncuSenseApi.login(form.get('username'), form.get('password'));
                 window.location.href = '/dashboard.html';
             } catch (error) {
                 output.textContent = error.message;
+                btn.textContent = originalText;
             }
         });
     </script>
