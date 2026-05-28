@@ -1,0 +1,90 @@
+version: '3.8'
+
+# ============================================================
+# IncuSense Platform — Docker Compose
+# Windows: esegui da PowerShell nella cartella IncuSense
+#   cd "D:\USERDATA\Documents\GitHub\inCo2bate\IncuSense"
+#   docker compose up --build -d
+# ============================================================
+
+services:
+
+  # ── 1. TimescaleDB ─────────────────────────────────────────
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: incusense-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: incusense
+      POSTGRES_USER: incusense_user
+      POSTGRES_PASSWORD: incusense_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U incusense_user -d incusense"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── 2. Mosquitto MQTT Broker ────────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: incusense-mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+
+  # ── 3. Spring Boot Backend ─────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: incusense-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://timescaledb:5432/incusense
+      SPRING_DATASOURCE_USERNAME: incusense_user
+      SPRING_DATASOURCE_PASSWORD: incusense_secret
+      MQTT_BROKER_URL: tcp://mosquitto:1883
+      MQTT_CLIENT_ID: incusense-backend-01
+      JWT_SECRET: incusense-dev-secret-key-change-in-prod-min-256bit
+      JWT_EXPIRATION_MS: 86400000
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+
+  # ── 4. Frontend (Nginx) ─────────────────────────────────────
+  frontend:
+    image: nginx:alpine
+    container_name: incusense-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+
+volumes:
+  timescale_data:
+  mosquitto_data:
+  mosquitto_logs:

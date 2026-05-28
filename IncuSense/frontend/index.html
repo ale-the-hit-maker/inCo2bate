@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IncuSense Login</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="login-page">
+    <main class="login-shell">
+        <section class="login-panel">
+            <div class="brand-mark">IS</div>
+            <h1>IncuSense</h1>
+            <p>Secure telemetry dashboard for incubator sensing hubs.</p>
+            <form id="login-form" class="login-form">
+                <label>
+                    Username
+                    <input name="username" autocomplete="username" value="admin" required>
+                </label>
+                <label>
+                    Password
+                    <input name="password" type="password" autocomplete="current-password" value="admin123" required>
+                </label>
+                <button type="submit">Sign in</button>
+                <output id="login-error" class="error-message"></output>
+            </form>
+        </section>
+    </main>
+    <script src="/js/api.js"></script>
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const output = document.getElementById('login-error');
+            output.textContent = '';
+            try {
+                await IncuSenseApi.login(form.get('username'), form.get('password'));
+                window.location.href = '/dashboard.html';
+            } catch (error) {
+                output.textContent = error.message;
+            }
+        });
+    </script>
+</body>
+</html>

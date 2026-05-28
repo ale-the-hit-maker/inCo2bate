@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IncuSense Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <span class="eyebrow">IncuSense</span>
+            <h1>Incubator Telemetry</h1>
+        </div>
+        <button id="logout-button" class="ghost-button" type="button">Logout</button>
+    </header>
+
+    <main class="dashboard">
+        <section class="status-strip" aria-live="polite">
+            <article>
+                <span>CO2</span>
+                <strong id="co2-value">--</strong>
+                <small>ppm</small>
+            </article>
+            <article>
+                <span>Environment</span>
+                <strong id="temp-value">--</strong>
+                <small>C</small>
+            </article>
+            <article>
+                <span>Humidity</span>
+                <strong id="hum-value">--</strong>
+                <small>%</small>
+            </article>
+            <article>
+                <span>12V Rail</span>
+                <strong id="rail-value">--</strong>
+                <small>V</small>
+            </article>
+        </section>
+
+        <section class="content-grid">
+            <div class="panel wide">
+                <div class="panel-header">
+                    <h2>Latest Measurements</h2>
+                    <span id="last-update">Waiting for telemetry</span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Hub</th>
+                            <th>CO2 ppm</th>
+                            <th>Heater C</th>
+                            <th>Env C</th>
+                            <th>Humidity %</th>
+                            <th>12V</th>
+                        </tr>
+                        </thead>
+                        <tbody id="measurements-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Alerts</h2>
+                </div>
+                <ul id="alerts-list" class="alerts-list"></ul>
+            </div>
+        </section>
+    </main>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>
