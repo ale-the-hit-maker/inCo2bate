@@ -252,27 +252,46 @@ void Task_ThermalControl(void *pvParameters) {
 }
 
 void Task_Sensing(void *pvParameters) {
+    float simulated_time = 0.0f;
+
     while (1) {
-        long sumTia = 0;
-        long sumVmon = 0;
-        for (int i = 0; i < 64; i++) {
-            sumTia += analogRead(PIN_TIA_ADC);
-            sumVmon += analogRead(PIN_VMON_ADC);
+        // -----------------------------------------------------------
+        // 1. DATA MOCKING (Sensore a 5% CO2)
+        // -----------------------------------------------------------
+        // Punto centrale tra 1380 (0%) e 2115 (5%) = 1747
+        // Ampiezza per l'oscillazione = 367
+        // In questo modo avgTia oscillerà morbidamente tra 1380 e 2114
+        float avgTia = 1747.0f + 367.0f * sin(simulated_time);
+        
+        // Alimentatore 12V fisso e perfetto
+        float avgVmon = 2948.0f; 
+
+        // Rallentiamo lo scorrere del tempo per simulare l'inerzia del gas
+        simulated_time += 0.05f; 
+
+        // -----------------------------------------------------------
+        // 2. CONVERSIONE FISICA REALISTICA (ADC -> PPM)
+        // -----------------------------------------------------------
+        float co2ppm = 400.0f; // Base atmosferica minima
+        
+        if (avgTia > 1380.0f) {
+            // Formula di interpolazione lineare: 
+            // (ADC_Letto - ADC_Min) * (Range_PPM / Range_ADC)
+            float delta_adc = 2115.0f - 1380.0f;
+            float delta_ppm = 50000.0f - 400.0f; // Da 400 a 50k
+            
+            co2ppm = 400.0f + ((avgTia - 1380.0f) * (delta_ppm / delta_adc));
         }
 
-        float avgTia = sumTia / 64.0f;
-        float avgVmon = sumVmon / 64.0f;
-        
-        // Conversione TIA fittizia in ppm (sostituire con curva logaritmica reale)
-        float co2ppm = avgTia * 0.2f; 
-        
-        // V_MON: Partitore 100k/22k dalla linea a 12V
+        // Taglio di sicurezza (Clamp)
+        if (co2ppm < 400.0f) co2ppm = 400.0f;
+        if (co2ppm > 55000.0f) co2ppm = 55000.0f;
+
         float rail_12V = (avgVmon * 3.0f / 4095.0f) * (122.0f / 22.0f);
 
-        // Lettura SHT41 (I2C)
-        float env_t = 37.0f; // Default Wokwi Mock
-        float env_h = 95.0f; // Default Wokwi Mock
-        
+        // Lettura SHT41 o Mock
+        float env_t = 37.0f; 
+        float env_h = 95.0f; 
         if (has_sht41) {
             sensors_event_t humidity, temp;
             sht4.getEvent(&humidity, &temp);
@@ -280,10 +299,13 @@ void Task_Sensing(void *pvParameters) {
             env_h = humidity.relative_humidity;
         }
 
+        // -----------------------------------------------------------
+        // 3. IMPACCHETTAMENTO
+        // -----------------------------------------------------------
         Payload payload;
         payload.ts = (uint32_t)time(nullptr);
         payload.co2_ppm = co2ppm;
-        payload.heater_temp = heaterTemp;
+        payload.heater_temp = heaterTemp; 
         payload.env_temp = env_t;
         payload.env_hum = env_h;
         payload.rail_12v = rail_12V;
@@ -292,7 +314,10 @@ void Task_Sensing(void *pvParameters) {
             xQueueSend(payloadQueue, &payload, 0);
         }
 
-        Serial.printf("[SENSE] CO2=%.1f ppm | V12V=%.2fV | Env: %.1fC/%.1f%%\n", co2ppm, rail_12V, env_t, env_h);
+        // Stampa di debug in stile industriale
+        Serial.printf("[SENSE] CO2: %5.0f ppm (%.1f%%) | V12V: %.2fV | Env: %.1fC\n", 
+                      co2ppm, (co2ppm/10000.0f), rail_12V, env_t);
+                      
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
