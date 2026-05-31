@@ -1,0 +1,30 @@
+# Override per TEST EMAIL LOCALE con Mailpit (cattura-email con interfaccia web).
+# Le email NON vengono recapitate a caselle reali: vengono catturate da Mailpit
+# e visualizzabili su http://localhost:8025  (utile per verificare la pipeline).
+#
+# Avvio:
+#   docker compose -f docker-compose.yml -f docker-compose.mailtest.yml up -d
+# Interfaccia Mailpit:
+#   http://localhost:8025
+#
+# Per la consegna REALE alla tua casella (es. Gmail) NON usare questo override:
+# usa invece il file .env (vedi .env.example) e il normale `docker compose up -d`.
+
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: incusense-mailpit
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"   # UI web
+      - "127.0.0.1:1025:1025"   # SMTP (opzionale dall'host)
+
+  backend:
+    environment:
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      ALERT_FROM: incusense@localhost
+    depends_on:
+      - mailpit

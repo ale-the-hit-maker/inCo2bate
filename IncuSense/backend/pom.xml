@@ -79,6 +79,12 @@
             <artifactId>spring-integration-mqtt</artifactId>
         </dependency>
 
+        <!-- Mail (alert notifications) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- Validation -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IncuSense Notification Contacts</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <span class="eyebrow">IncuSense</span>
+            <h1>Notification Contacts</h1>
+        </div>
+        <div class="topbar-actions">
+            <a href="/dashboard.html" class="ghost-button" role="button">Dashboard</a>
+            <button id="logout-button" class="ghost-button" type="button">Terminate Session</button>
+        </div>
+    </header>
+
+    <main class="dashboard">
+        <section class="panel">
+            <div class="panel-header"><h2>Add contact</h2></div>
+            <form id="contact-form" class="inline-form">
+                <label>Label<input name="label" required placeholder="On-call scientist"></label>
+                <label>Email<input name="target" type="email" required placeholder="name@lab.org"></label>
+                <label>Min level
+                    <select name="minLevel">
+                        <option value="INFO">INFO</option>
+                        <option value="WARN" selected>WARN</option>
+                        <option value="CRITICAL">CRITICAL</option>
+                    </select>
+                </label>
+                <label class="checkbox-inline"><input type="checkbox" name="enabled" checked> Enabled</label>
+                <button type="submit">Add</button>
+                <output id="contact-error" class="error-message"></output>
+            </form>
+        </section>
+
+        <section class="panel wide">
+            <div class="panel-header"><h2>Contacts</h2></div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>Label</th><th>Channel</th><th>Email</th><th>Min level</th><th>Enabled</th><th></th></tr>
+                    </thead>
+                    <tbody id="contacts-body"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="/js/api.js"></script>
+    <script>
+        IncuSenseApi.requireAuth();
+        document.getElementById('logout-button').addEventListener('click', () => IncuSenseApi.logout());
+        const body = document.getElementById('contacts-body');
+        const errorOut = document.getElementById('contact-error');
+
+        async function refresh() {
+            const contacts = await IncuSenseApi.notificationContacts();
+            body.innerHTML = contacts.map((c) => `
+                <tr>
+                    <td>${escapeHtml(c.label)}</td>
+                    <td>${c.channel}</td>
+                    <td>${escapeHtml(c.target)}</td>
+                    <td>${c.minLevel}</td>
+                    <td>${c.enabled ? 'Yes' : 'No'}</td>
+                    <td><button type="button" class="ghost-button danger" data-id="${c.id}">Delete</button></td>
+                </tr>`).join('') || '<tr><td colspan="6">No contacts yet.</td></tr>';
+            body.querySelectorAll('button[data-id]').forEach((btn) => {
+                btn.addEventListener('click', async () => {
+                    if (!confirm('Delete this contact? This cannot be undone.')) return;
+                    await IncuSenseApi.deleteContact(btn.getAttribute('data-id'));
+                    refresh();
+                });
+            });
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+        }
+
+        document.getElementById('contact-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorOut.textContent = '';
+            const f = new FormData(e.currentTarget);
+            try {
+                await IncuSenseApi.createContact({
+                    label: f.get('label'),
+                    channel: 'EMAIL',
+                    target: f.get('target'),
+                    minLevel: f.get('minLevel'),
+                    enabled: f.get('enabled') === 'on'
+                });
+                e.currentTarget.reset();
+                refresh();
+            } catch (err) {
+                errorOut.textContent = err.message;
+            }
+        });
+
+        refresh();
+    </script>
+</body>
+</html>

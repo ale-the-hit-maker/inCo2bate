@@ -1,10 +1,11 @@
 [wokwi]
 version = 1
-# [ADATTATO] Punto ai binari della build di simulazione (esp32-c3-devkitm-1-sim)
-# che include la flag WOKWI_SIM e usa la mock Ethernet.
-# Per hardware reale, commentare queste righe per usare la build default.
-filesystem = ".pio/build/esp32-c3-devkitm-1-sim/littlefs.bin"
-firmware = ".pio/build/esp32-c3-devkitm-1-sim/firmware.bin"
-partitions = ".pio/build/esp32-c3-devkitm-1-sim/partitions.bin"
+# [ADATTATO] Punto ai binari della build Wi-Fi simulation (esp32-c3-devkitm-1-wifi-sim)
+# che include la flag WOKWI_WIFI_SIM e usa WiFi.h per traffico MQTT reale.
+# Per mock Ethernet (stub senza traffico): sostituire -wifi-sim con -sim nei path.
+# Per hardware reale: commentare queste righe per usare la build default.
+firmware   = ".pio/build/esp32-c3-devkitm-1-wifi-sim/firmware.bin"
+filesystem = ".pio/build/esp32-c3-devkitm-1-wifi-sim/littlefs.bin"
+partitions = ".pio/build/esp32-c3-devkitm-1-wifi-sim/partitions.bin"
 debug = true
 gdbServerPort = 3333

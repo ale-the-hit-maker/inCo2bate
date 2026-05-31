@@ -22,6 +22,16 @@ spring:
           time_zone: UTC
   jackson:
     time-zone: UTC
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          starttls:
+            enable: true
 
 management:
   endpoints:
@@ -32,15 +42,30 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    # Do not probe SMTP during health checks: when email is unconfigured the mail
+    # indicator would block/fail /actuator/health (connect to localhost:587).
+    mail:
+      enabled: false
 
 incusense:
   mqtt:
     broker-url: ${MQTT_BROKER_URL:tcp://mosquitto:1883}
     client-id: ${MQTT_CLIENT_ID:incusense-backend-01}
-    topic: ${MQTT_TOPIC:incusense/hubs/+/telemetry}
+    topic: ${MQTT_TOPIC:incusense/labs/+/hubs/+/telemetry}
+    status-topic: ${MQTT_STATUS_TOPIC:incusense/labs/+/hubs/+/status}
   jwt:
     secret: ${JWT_SECRET:incusense-dev-secret-key-change-in-prod-min-256bit}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
   security:
     admin-username: ${INCUSENSE_ADMIN_USERNAME:admin}
     admin-password: ${INCUSENSE_ADMIN_PASSWORD:admin123}
+    operator-username: ${INCUSENSE_OPERATOR_USERNAME:operator}
+    operator-password: ${INCUSENSE_OPERATOR_PASSWORD:operator123}
+    # Self-registration is OFF in the prototype; set true to restore POST /api/auth/register.
+    registration-enabled: ${REGISTRATION_ENABLED:false}
+  alerting:
+    from-address: ${ALERT_FROM:incusense@localhost}
+    cooldown-seconds: ${ALERT_COOLDOWN:300}
+  drift:
+    degrading-eol-days: ${DRIFT_EOL_DAYS:7}

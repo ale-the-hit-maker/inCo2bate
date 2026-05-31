@@ -3,8 +3,13 @@
 #include <Wire.h>
 #include <Adafruit_SHT4x.h>
 
-// [ADATTATO] Mock Ethernet per Wokwi simulation (se WOKWI_SIM è definito)
-#ifdef WOKWI_SIM
+// [ADATTATO] Selezione trasporto di rete a compile-time:
+//   WOKWI_WIFI_SIM → Wi-Fi reale (Wokwi-GUEST, traffico MQTT reale)
+//   WOKWI_SIM      → Mock Ethernet (stub senza traffico)
+//   default        → Ethernet W5500 reale (hardware di produzione)
+#if defined(WOKWI_WIFI_SIM)
+#include <WiFi.h>
+#elif defined(WOKWI_SIM)
 #include "ethernet_mock.h"
 #else
 #include <Ethernet.h>
@@ -59,7 +64,11 @@
 
 #define MQTT_BROKER_PORT   1883
 
+// [v3] MQTT_LAB_ID è ora sovrascrivibile via build flag (provisioning per-lab):
+//   -D MQTT_LAB_ID=\"lab_xxxxxxxx\"  (slug ottenuto da GET /api/lab dopo la registrazione)
+#ifndef MQTT_LAB_ID
 #define MQTT_LAB_ID        "lab_alpha"
+#endif
 #define MQTT_INC_ID        "inc_01"
 #define MQTT_NODE_ID       "node_a"
 
@@ -68,11 +77,12 @@
 // device_id del sensore CO2 (un hub può avere più sensing unit in futuro)
 #define MQTT_DEVICE_ID MQTT_HUB_ID "-co2"
 
-// [ADATTATO] Topic compile-time — non più buildMqttTopic() a runtime
-#define TOPIC_MEASUREMENTS "incusense/hubs/" MQTT_HUB_ID "/telemetry"
-#define TOPIC_STATUS       "incusense/hubs/" MQTT_HUB_ID "/status"
-#define TOPIC_COMMANDS     "incusense/hubs/" MQTT_HUB_ID "/commands"
-#define TOPIC_ACK          "incusense/hubs/" MQTT_HUB_ID "/ack"
+// [v3] Topic compile-time tenant-scoped: incusense/labs/{labId}/hubs/{hubKey}/...
+#define TOPIC_BASE         "incusense/labs/" MQTT_LAB_ID "/hubs/" MQTT_HUB_ID
+#define TOPIC_MEASUREMENTS TOPIC_BASE "/telemetry"
+#define TOPIC_STATUS       TOPIC_BASE "/status"
+#define TOPIC_COMMANDS     TOPIC_BASE "/commands"
+#define TOPIC_ACK          TOPIC_BASE "/ack"
 
 // Payload LWT pubblicato dal broker se il dispositivo si disconnette
 // in modo anomalo (caduta link, watchdog): il backend lo riceve su TOPIC_STATUS
@@ -137,13 +147,19 @@ static QueueHandle_t payloadQueue = NULL;
 // [ADATTATO] Coda per ACK calibrazione (dimensione 4: raramente ne arrivano più di 1)
 static QueueHandle_t ackQueue     = NULL;
 
-// [ADATTATO] Istanza globale Ethernet (per WOKWI_SIM, è mock; per hardware, è reale)
-#ifdef WOKWI_SIM
-EthernetMock Ethernet;
-#endif
-
+// [ADATTATO] Client di rete e MQTT — tipo selezionato a compile-time.
+// WiFiClient e EthernetClient ereditano entrambi da Client (Arduino),
+// quindi PubSubClient funziona in modo identico con entrambi.
+#if defined(WOKWI_WIFI_SIM)
+static WiFiClient    netClient;
+static PubSubClient  mqttClient(netClient);
+#else
+  #ifdef WOKWI_SIM
+  EthernetMock Ethernet;
+  #endif
 static EthernetClient ethClient;
 static PubSubClient   mqttClient(ethClient);
+#endif
 static Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 static bool has_sht41 = false;
 
@@ -188,6 +204,35 @@ void publishAck(long eventId, const char *command, const char *status);
 // ===================================================================
 
 bool connectNetwork() {
+#if defined(WOKWI_WIFI_SIM)
+    // ── Wi-Fi Wokwi (traffico reale) ─────────────────────────────
+    if (WiFi.status() == WL_CONNECTED) return true;
+
+    Serial.println("[NET] Connecting to Wokwi-GUEST Wi-Fi...");
+    WiFi.begin("Wokwi-GUEST", "", 6);
+
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+        delay(500);
+        Serial.print(".");
+        attempts++;
+    }
+    Serial.println();
+
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[NET] Wi-Fi connection failed");
+        return false;
+    }
+
+    Serial.printf("[NET] Wi-Fi connected. IP=%s broker=%s:%d\n",
+                  WiFi.localIP().toString().c_str(),
+                  MQTT_BROKER_HOST, MQTT_BROKER_PORT);
+
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+
+    return true;
+#else
+    // ── Ethernet (reale W5500 o mock Wokwi) ──────────────────────
     if (Ethernet.linkStatus() == LinkON) {
         Ethernet.maintain();
         return true;
@@ -224,6 +269,7 @@ bool connectNetwork() {
     Serial.printf("[NET] Ethernet connected. IP=%s broker=%s:%d\n",
                   Ethernet.localIP().toString().c_str(), MQTT_BROKER_HOST, MQTT_BROKER_PORT);
     return true;
+#endif
 }
 
 // [ADATTATO] connectMqtt() — aggiunge LWT, callback, buffer size e subscribe
@@ -381,16 +427,19 @@ void appendBacklog(const Payload &payload) {
         Serial.println("[BACKLOG] open append failed");
         return;
     }
-    char line[240];
+    char line[280];
     int len = snprintf(line, sizeof(line),
         "{\"ts\":%u,\"co2_ppm\":%.2f,\"heater_temp\":%.2f,"
-        "\"env_temp\":%.2f,\"env_hum\":%.2f,\"rail_12v\":%.2f}\n",
+        "\"env_temp\":%.2f,\"env_hum\":%.2f,\"rail_12v\":%.2f,"
+        "\"raw_adc\":%u,\"sensor_response\":%.4f}\n",
         payload.ts,
         payload.co2_ppm,
         payload.heater_temp,
         payload.env_temp,
         payload.env_hum,
-        payload.rail_12v);
+        payload.rail_12v,
+        payload.raw_adc,
+        payload.sensor_response);
 
     file.write((const uint8_t *)line, len);
     file.close();
@@ -445,6 +494,9 @@ void publishTelemetry(const Payload &payload) {
     doc["env_temp"]    = serialized(String(payload.env_temp, 2));
     doc["env_hum"]     = serialized(String(payload.env_hum, 2));
     doc["rail_12v"]    = serialized(String(payload.rail_12v, 3));
+    // [v3] Campi per il monitoraggio del drift del sensore lato backend
+    doc["raw_adc"]         = payload.raw_adc;
+    doc["sensor_response"] = serialized(String(payload.sensor_response, 4));
 
     char buffer[MQTT_BUFFER_SIZE];
     serializeJson(doc, buffer, sizeof(buffer));

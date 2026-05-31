@@ -1,0 +1,5 @@
+# Secrets / local config — never commit
+.env
+
+# Test scratch files
+scripts/.tmp/

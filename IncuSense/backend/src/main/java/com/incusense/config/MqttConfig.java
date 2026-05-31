@@ -40,9 +40,10 @@ public class MqttConfig {
             MqttPahoClientFactory mqttClientFactory,
             MessageChannel mqttInputChannel,
             @Value("${incusense.mqtt.client-id}") String clientId,
-            @Value("${incusense.mqtt.topic}") String topic) {
+            @Value("${incusense.mqtt.topic}") String telemetryTopic,
+            @Value("${incusense.mqtt.status-topic:incusense/labs/+/hubs/+/status}") String statusTopic) {
         MqttPahoMessageDrivenChannelAdapter adapter =
-                new MqttPahoMessageDrivenChannelAdapter(clientId + "-inbound", mqttClientFactory, topic);
+                new MqttPahoMessageDrivenChannelAdapter(clientId + "-inbound", mqttClientFactory, telemetryTopic, statusTopic);
         adapter.setCompletionTimeout(5000);
         adapter.setConverter(new DefaultPahoMessageConverter());
         adapter.setQos(1);

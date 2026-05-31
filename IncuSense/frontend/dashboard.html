@@ -11,8 +11,16 @@
         <div>
             <span class="eyebrow">IncuSense</span>
             <h1>Telemetry Overview</h1>
+            <small id="lab-banner" class="lab-banner">Lab: --</small>
         </div>
-        <button id="logout-button" class="ghost-button" type="button">Terminate Session</button>
+        <div class="topbar-actions">
+            <span id="live-badge" class="live-badge offline" title="Live connection status">OFFLINE</span>
+            <label class="hub-select">
+                <select id="hub-selector"><option value="">All hubs</option></select>
+            </label>
+            <a href="/contacts.html" class="ghost-button" role="button">Contacts</a>
+            <button id="logout-button" class="ghost-button" type="button">Terminate Session</button>
+        </div>
     </header>
 
     <main class="dashboard">
@@ -84,10 +92,27 @@
                 <ul id="alerts-list" class="alerts-list"></ul>
             </div>
         </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <h2>Sensor Health</h2>
+                <span id="health-status" class="health-badge unknown">UNKNOWN</span>
+            </div>
+            <div class="health-grid">
+                <div class="health-stat"><span>Observed drift</span><strong id="health-drift">--</strong></div>
+                <div class="health-stat"><span>Operating hours</span><strong id="health-hours">--</strong></div>
+                <div class="health-stat"><span>Projected end-of-life</span><strong id="health-eol">--</strong></div>
+                <div class="health-stat"><span>Current response</span><strong id="health-resp">--</strong></div>
+            </div>
+            <p class="muted-note">Select a hub above to monitor its sensor drift. Predictive maintenance raises an alert before the sensor degrades past tolerance.</p>
+        </section>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs/bundles/stomp.umd.min.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/dashboard.js"></script>
+    <script src="/js/realtime.js"></script>
 </body>
 </html>

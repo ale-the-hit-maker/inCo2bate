@@ -59,6 +59,16 @@ services:
       MQTT_CLIENT_ID: incusense-backend-01
       JWT_SECRET: incusense-dev-secret-key-change-in-prod-min-256bit
       JWT_EXPIRATION_MS: 86400000
+      # Self-registration disabled in the prototype; set to true to re-enable POST /api/auth/register.
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
+      # Email alerts (D1). Leave SMTP_HOST blank to disable email delivery (alerts still logged/persisted).
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ALERT_FROM: ${ALERT_FROM:-incusense@localhost}
+      ALERT_COOLDOWN: ${ALERT_COOLDOWN:-300}
+      DRIFT_EOL_DAYS: ${DRIFT_EOL_DAYS:-7}
     depends_on:
       timescaledb:
         condition: service_healthy

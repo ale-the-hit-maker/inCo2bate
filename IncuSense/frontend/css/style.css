@@ -357,3 +357,119 @@ tbody tr:last-child td {
         grid-template-columns: 1fr;
     }
 }
+
+/* --- v3 additions --- */
+.auth-switch {
+    margin-top: 20px;
+    font-size: 14px;
+    text-align: center;
+}
+.auth-switch a { color: var(--accent); text-decoration: none; }
+.auth-switch a:hover { text-decoration: underline; }
+
+.topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+a.ghost-button {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 14px;
+    font-weight: 600;
+}
+.lab-banner {
+    display: block;
+    margin-top: 4px;
+    color: var(--accent);
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+
+.live-badge {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+}
+.live-badge.online { color: var(--success); border-color: var(--success); box-shadow: 0 0 10px rgba(0,230,118,0.3); }
+.live-badge.offline { color: var(--muted); }
+
+.hub-select select { padding: 8px 12px; border-radius: 6px; background-color: var(--bg); cursor: pointer; }
+
+.seg-control { display: flex; gap: 16px; }
+.radio-inline, .checkbox-inline {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    color: var(--ink);
+}
+.radio-inline input, .checkbox-inline input { width: auto; }
+
+.slug-box {
+    margin-top: 24px;
+    padding: 20px;
+    border: 1px solid var(--accent-glow);
+    border-radius: 10px;
+    background: rgba(0, 229, 255, 0.05);
+    display: grid;
+    gap: 12px;
+}
+.slug-row { display: flex; align-items: center; gap: 12px; }
+.slug-box code {
+    font-size: 18px;
+    color: var(--accent);
+    background: rgba(0,0,0,0.3);
+    padding: 6px 12px;
+    border-radius: 6px;
+    letter-spacing: 1px;
+}
+
+.inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: end;
+}
+.inline-form label { min-width: 160px; }
+.inline-form button { height: 44px; }
+
+.health-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+}
+.health-stat {
+    display: grid;
+    gap: 6px;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.02);
+}
+.health-stat span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+.health-stat strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+
+.health-badge {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+}
+.health-badge.ok { color: var(--success); border-color: var(--success); }
+.health-badge.degrading { color: var(--warn); border-color: var(--warn); }
+.health-badge.critical { color: var(--danger); border-color: var(--danger); }
+.health-badge.unknown { color: var(--muted); }
+
+.muted-note { margin-top: 16px; font-size: 13px; color: var(--muted); }
+.ghost-button.danger { color: var(--danger); border-color: rgba(255,61,113,0.4); }
+.ghost-button.danger:hover { background: rgba(255,61,113,0.1); border-color: var(--danger); }

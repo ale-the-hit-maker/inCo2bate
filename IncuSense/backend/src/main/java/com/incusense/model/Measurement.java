@@ -38,11 +38,22 @@ public class Measurement {
     @Column(name = "rail_12v", nullable = false)
     private Double rail12v;
 
+    @Column(name = "raw_adc")
+    private Integer rawAdc;
+
+    @Column(name = "sensor_response")
+    private Double sensorResponse;
+
     protected Measurement() {
     }
 
     public Measurement(SensingHub hub, Instant recordedAt, Double co2Ppm, Double heaterTemp,
                        Double envTemp, Double envHum, Double rail12v) {
+        this(hub, recordedAt, co2Ppm, heaterTemp, envTemp, envHum, rail12v, null, null);
+    }
+
+    public Measurement(SensingHub hub, Instant recordedAt, Double co2Ppm, Double heaterTemp,
+                       Double envTemp, Double envHum, Double rail12v, Integer rawAdc, Double sensorResponse) {
         this.hub = hub;
         this.id = new MeasurementId(hub.getId(), recordedAt);
         this.co2Ppm = co2Ppm;
@@ -50,6 +61,8 @@ public class Measurement {
         this.envTemp = envTemp;
         this.envHum = envHum;
         this.rail12v = rail12v;
+        this.rawAdc = rawAdc;
+        this.sensorResponse = sensorResponse;
     }
 
     public MeasurementId getId() {
@@ -82,5 +95,13 @@ public class Measurement {
 
     public Double getRail12v() {
         return rail12v;
+    }
+
+    public Integer getRawAdc() {
+        return rawAdc;
+    }
+
+    public Double getSensorResponse() {
+        return sensorResponse;
     }
 }

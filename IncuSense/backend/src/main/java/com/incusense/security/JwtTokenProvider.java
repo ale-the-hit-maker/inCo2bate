@@ -35,8 +35,30 @@ public class JwtTokenProvider {
                 .compact();
     }
 
+    public String createToken(String username, String labId, String role) {
+        Instant now = Instant.now();
+        return Jwts.builder()
+                .subject(username)
+                .claim("labId", labId)
+                .claim("role", role)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plusMillis(expirationMs)))
+                .signWith(signingKey())
+                .compact();
+    }
+
     public String getUsername(String token) {
         return claims(token).getSubject();
+    }
+
+    public String getLabId(String token) {
+        Object v = claims(token).get("labId");
+        return v == null ? null : v.toString();
+    }
+
+    public String getRole(String token) {
+        Object v = claims(token).get("role");
+        return v == null ? null : v.toString();
     }
 
     public boolean validateToken(String token) {

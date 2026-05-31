@@ -19,7 +19,9 @@ public class CalibrationService {
                 payload.heaterTemp() + calibration.temperatureOffset(),
                 payload.envTemp() + calibration.temperatureOffset(),
                 payload.envHum() + calibration.humidityOffset(),
-                payload.rail12v() + calibration.rail12vOffset());
+                payload.rail12v() + calibration.rail12vOffset(),
+                payload.rawAdc(),
+                payload.sensorResponse());
     }
 
     public Dtos.CalibrationResponse getCalibration(String hubKey) {
