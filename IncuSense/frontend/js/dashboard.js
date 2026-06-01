@@ -5,6 +5,7 @@
     const alertsList = document.getElementById('alerts-list');
     const lastUpdate = document.getElementById('last-update');
     const metricSelector = document.getElementById('chart-metric-selector');
+    const windowSelector = document.getElementById('chart-window-selector');
     const hubSelector = document.getElementById('hub-selector');
     const labBanner = document.getElementById('lab-banner');
     const liveBadge = document.getElementById('live-badge');
@@ -12,6 +13,9 @@
     let historyChart = null;
     let cachedHistoryData = [];
     let selectedHub = '';
+    let selectedDays = parseInt(windowSelector.value, 10);
+
+    const WINDOW_LABELS = { 1: '24 ore', 7: '7 giorni', 30: '30 giorni', 90: '3 mesi', 180: '6 mesi' };
 
     document.getElementById('logout-button').addEventListener('click', () => IncuSenseApi.logout());
 
@@ -86,23 +90,44 @@
             }
         });
         metricSelector.addEventListener('change', () => updateChart(cachedHistoryData));
+        windowSelector.addEventListener('change', () => {
+            selectedDays = parseInt(windowSelector.value, 10);
+            refreshHistory();
+        });
     }
 
     function updateChart(historyData) {
-        if (!historyChart || !historyData.length) return;
+        if (!historyChart) return;
         const metric = metricSelector.value;
-        const labels = historyData.map(d => new Date(d.recordedAt).toLocaleDateString());
+        const useTimeLabel = selectedDays <= 7;
+
+        const labels = historyData.map(d => {
+            const date = new Date(d.recordedAt);
+            return useTimeLabel
+                ? date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : date.toLocaleDateString();
+        });
         const dataPoints = historyData.map(d => d[metric]);
+
         let color = '#00e5ff', bgColor = 'rgba(0, 229, 255, 0.1)';
         if (metric.includes('Temp')) { color = '#ff3d71'; bgColor = 'rgba(255, 61, 113, 0.1)'; }
         else if (metric === 'envHum') { color = '#00e676'; bgColor = 'rgba(0, 230, 118, 0.1)'; }
         else if (metric === 'rail12v') { color = '#ffab00'; bgColor = 'rgba(255, 171, 0, 0.1)'; }
+
+        const pointRadius = dataPoints.length <= 10 ? 4 : 0;
+        const pointHoverRadius = dataPoints.length <= 10 ? 6 : 6;
+
         historyChart.data.labels = labels;
         historyChart.data.datasets[0].data = dataPoints;
         historyChart.data.datasets[0].borderColor = color;
         historyChart.data.datasets[0].backgroundColor = bgColor;
+        historyChart.data.datasets[0].pointRadius = pointRadius;
+        historyChart.data.datasets[0].pointHoverRadius = pointHoverRadius;
         historyChart.options.plugins.tooltip.bodyColor = color;
         historyChart.update();
+
+        document.getElementById('chart-title').textContent =
+            `Trend Storico — ${WINDOW_LABELS[selectedDays] || selectedDays + ' giorni'}`;
     }
 
     async function loadLabAndHubs() {
@@ -122,17 +147,26 @@
         try { renderHealth(await IncuSenseApi.hubHealth(selectedHub)); } catch (e) { renderHealth(null); }
     }
 
+    async function refreshHistory() {
+        try {
+            const history = await IncuSenseApi.history(selectedDays);
+            cachedHistoryData = history || [];
+            updateChart(cachedHistoryData);
+        } catch (e) { /* ignore history errors silently */ }
+    }
+
     async function refreshData() {
         try {
             const measurementsPromise = selectedHub
                 ? IncuSenseApi.measurementsForHub(selectedHub, 100)
                 : IncuSenseApi.latestMeasurements(100);
             const [measurements, alerts, history] = await Promise.all([
-                measurementsPromise, IncuSenseApi.alerts(), IncuSenseApi.history()
+                measurementsPromise, IncuSenseApi.alerts(), IncuSenseApi.history(selectedDays)
             ]);
             renderMeasurements(measurements);
             renderAlerts(alerts);
-            if (history && history.length > 0) { cachedHistoryData = history; updateChart(cachedHistoryData); }
+            cachedHistoryData = history || [];
+            updateChart(cachedHistoryData);
             await refreshHealth();
         } catch (error) {
             if (String(error.message).includes('401') || String(error.message).includes('403')) {

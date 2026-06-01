@@ -45,8 +45,15 @@
 
         <section class="panel">
             <div class="panel-header">
-                <h2>6-Month Historical Trend</h2>
+                <h2 id="chart-title">Trend Storico</h2>
                 <div class="chart-controls">
+                    <select id="chart-window-selector">
+                        <option value="1">24 ore</option>
+                        <option value="7">7 giorni</option>
+                        <option value="30">30 giorni</option>
+                        <option value="90">3 mesi</option>
+                        <option value="180" selected>6 mesi</option>
+                    </select>
                     <select id="chart-metric-selector">
                         <option value="co2Ppm">CO2 Level (ppm)</option>
                         <option value="heaterTemp">Heater Temp (°C)</option>

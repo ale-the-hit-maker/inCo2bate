@@ -262,6 +262,12 @@ button:hover {
     font-weight: 600;
 }
 
+.chart-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
 .chart-controls select {
     padding: 8px 32px 8px 12px;
     font-size: 13px;

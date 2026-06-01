@@ -141,9 +141,14 @@ public class Controllers {
     }
 
     @GetMapping("/measurements/history")
-    public List<Dtos.HistoryResponse> history(@AuthenticationPrincipal AuthenticatedLabUser principal) {
-        return measurementRepository.find6MonthHistory(principal.getLabId())
-                .stream()
+    public List<Dtos.HistoryResponse> history(
+            @AuthenticationPrincipal AuthenticatedLabUser principal,
+            @RequestParam(defaultValue = "180") int days) {
+        int sanitizedDays = Math.max(1, Math.min(days, 180));
+        List<Repositories.HistoryProjection> projections = sanitizedDays <= 7
+                ? measurementRepository.findHistoryHourly(principal.getLabId(), sanitizedDays * 24)
+                : measurementRepository.findHistoryByDays(principal.getLabId(), sanitizedDays);
+        return projections.stream()
                 .map(p -> new Dtos.HistoryResponse(
                         p.getRecordedAt(),
                         p.getCo2Ppm() != null ? p.getCo2Ppm() : 0.0,

@@ -52,6 +52,20 @@ public final class Repositories {
         @Query("select m from Measurement m join fetch m.hub h join fetch h.lab where h.hubKey = :hubKey and h.lab.labId = :labId order by m.id.recordedAt desc")
         List<Measurement> findByHubAndLabOrderByRecordedAtDesc(@Param("hubKey") String hubKey, @Param("labId") String labId, Pageable pageable);
 
+        @Query(value = "SELECT time_bucket(INTERVAL '1 hour', m.recorded_at) AS recordedAt, " +
+                "AVG(m.co2_ppm) AS co2Ppm, " +
+                "AVG(m.heater_temp) AS heaterTemp, " +
+                "AVG(m.env_temp) AS envTemp, " +
+                "AVG(m.env_hum) AS envHum, " +
+                "AVG(m.rail_12v) AS rail12v " +
+                "FROM measurements m " +
+                "JOIN sensing_hubs h ON h.id = m.hub_id " +
+                "JOIN labs l ON l.id = h.lab_id " +
+                "WHERE l.lab_id = :labId AND m.recorded_at >= NOW() - :hours * INTERVAL '1 hour' " +
+                "GROUP BY recordedAt " +
+                "ORDER BY recordedAt ASC", nativeQuery = true)
+        List<HistoryProjection> findHistoryHourly(@Param("labId") String labId, @Param("hours") int hours);
+
         @Query(value = "SELECT time_bucket(INTERVAL '1 day', m.recorded_at) AS recordedAt, " +
                 "AVG(m.co2_ppm) AS co2Ppm, " +
                 "AVG(m.heater_temp) AS heaterTemp, " +
@@ -61,10 +75,10 @@ public final class Repositories {
                 "FROM measurements m " +
                 "JOIN sensing_hubs h ON h.id = m.hub_id " +
                 "JOIN labs l ON l.id = h.lab_id " +
-                "WHERE l.lab_id = :labId AND m.recorded_at >= NOW() - INTERVAL '6 months' " +
+                "WHERE l.lab_id = :labId AND m.recorded_at >= NOW() - :days * INTERVAL '1 day' " +
                 "GROUP BY recordedAt " +
                 "ORDER BY recordedAt ASC", nativeQuery = true)
-        List<HistoryProjection> find6MonthHistory(@Param("labId") String labId);
+        List<HistoryProjection> findHistoryByDays(@Param("labId") String labId, @Param("days") int days);
     }
 
     @Repository

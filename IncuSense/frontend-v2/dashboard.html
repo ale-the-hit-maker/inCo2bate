@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IncuSense Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <!-- ── Topbar ── -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">IN</div>
+      <div class="brand-info">
+        <span class="brand-name">IncuSense</span>
+        <span class="brand-sub">CO₂ Monitoring Platform · InC0₂bate Inc.</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="lab-banner" class="lab-banner">Lab: --</span>
+      <label class="hub-select">
+        <select id="hub-selector"><option value="">All hubs</option></select>
+      </label>
+      <span id="live-badge" class="live-badge offline">
+        <span class="live-dot"></span>OFFLINE
+      </span>
+      <a href="/contacts.html" class="ghost-btn">Contacts</a>
+      <button id="logout-button" class="ghost-btn" type="button">Terminate Session</button>
+    </div>
+  </header>
+
+  <main class="dashboard" style="position:relative;z-index:1;">
+
+    <!-- ── Status strip ── -->
+    <section class="status-strip" aria-live="polite">
+      <article class="metric-card co2 glass-panel">
+        <div class="metric-top-line"></div>
+        <p class="metric-label">CO₂ Level</p>
+        <div class="metric-value-wrap">
+          <strong id="co2-value" class="metric-value">--</strong>
+          <span class="metric-unit">ppm</span>
+        </div>
+      </article>
+      <article class="metric-card env glass-panel">
+        <div class="metric-top-line"></div>
+        <p class="metric-label">Environment</p>
+        <div class="metric-value-wrap">
+          <strong id="temp-value" class="metric-value">--</strong>
+          <span class="metric-unit">°C</span>
+        </div>
+      </article>
+      <article class="metric-card hum glass-panel">
+        <div class="metric-top-line"></div>
+        <p class="metric-label">Humidity</p>
+        <div class="metric-value-wrap">
+          <strong id="hum-value" class="metric-value">--</strong>
+          <span class="metric-unit">%</span>
+        </div>
+      </article>
+      <article class="metric-card rail glass-panel">
+        <div class="metric-top-line"></div>
+        <p class="metric-label">12V Rail</p>
+        <div class="metric-value-wrap">
+          <strong id="rail-value" class="metric-value">--</strong>
+          <span class="metric-unit">V</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- ── Historical trend ── -->
+    <section class="glass-panel panel fade-in">
+      <div class="panel-header">
+        <div>
+          <p class="panel-title" id="chart-title">Trend Storico</p>
+          <p class="panel-subtitle" id="last-update">Awaiting signal…</p>
+        </div>
+        <div class="chart-controls">
+          <select id="chart-window-selector">
+            <option value="1">24 ore</option>
+            <option value="7">7 giorni</option>
+            <option value="30">30 giorni</option>
+            <option value="90">3 mesi</option>
+            <option value="180" selected>6 mesi</option>
+          </select>
+          <select id="chart-metric-selector">
+            <option value="co2Ppm">CO₂ (ppm)</option>
+            <option value="heaterTemp">Heater Temp (°C)</option>
+            <option value="envTemp">Env Temp (°C)</option>
+            <option value="envHum">Humidity (%)</option>
+            <option value="rail12v">12V Rail (V)</option>
+          </select>
+        </div>
+      </div>
+      <div style="position:relative;height:300px;width:100%">
+        <canvas id="history-chart"></canvas>
+      </div>
+    </section>
+
+    <!-- ── Content grid ── -->
+    <div class="content-grid">
+      <!-- Latest measurements -->
+      <div class="glass-panel panel fade-in">
+        <div class="panel-header">
+          <p class="panel-title">Latest Measurements</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Hub ID</th>
+                <th>CO₂ (ppm)</th>
+                <th>Heater (°C)</th>
+                <th>Env (°C)</th>
+                <th>Hum (%)</th>
+                <th>12V Rail</th>
+              </tr>
+            </thead>
+            <tbody id="measurements-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Alerts -->
+      <div class="glass-panel panel fade-in">
+        <div class="panel-header">
+          <p class="panel-title">System Alerts</p>
+        </div>
+        <ul id="alerts-list" class="alerts-list"></ul>
+      </div>
+    </div>
+
+    <!-- ── Sensor health ── -->
+    <section class="glass-panel panel fade-in">
+      <div class="panel-header">
+        <div>
+          <p class="panel-title">Sensor Health</p>
+        </div>
+        <span id="health-status" class="health-badge unknown">UNKNOWN</span>
+      </div>
+      <div class="health-grid">
+        <div class="health-stat"><span>Observed drift</span><strong id="health-drift">--</strong></div>
+        <div class="health-stat"><span>Operating hours</span><strong id="health-hours">--</strong></div>
+        <div class="health-stat"><span>Projected end-of-life</span><strong id="health-eol">--</strong></div>
+        <div class="health-stat"><span>Current response</span><strong id="health-resp">--</strong></div>
+      </div>
+      <p class="muted-note">Select a hub above to monitor its sensor drift. Predictive maintenance raises an alert before the sensor degrades past tolerance.</p>
+    </section>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs/bundles/stomp.umd.min.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/dashboard.js"></script>
+  <script src="/js/realtime.js"></script>
+</body>
+</html>

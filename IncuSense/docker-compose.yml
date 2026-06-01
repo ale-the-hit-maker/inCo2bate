@@ -81,7 +81,7 @@ services:
       retries: 5
       start_period: 90s
 
-  # ── 4. Frontend (Nginx) ─────────────────────────────────────
+  # ── 4. Frontend v1 (Nginx) ──────────────────────────────────
   frontend:
     image: nginx:alpine
     container_name: incusense-frontend
@@ -90,6 +90,19 @@ services:
       - "127.0.0.1:3000:80"
     volumes:
       - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+
+  # ── 5. Frontend v2 (Nginx) ──────────────────────────────────
+  frontend-v2:
+    image: nginx:alpine
+    container_name: incusense-frontend-v2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:80"
+    volumes:
+      - ./frontend-v2:/usr/share/nginx/html:ro
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend
