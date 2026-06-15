@@ -69,6 +69,8 @@ services:
       ALERT_FROM: ${ALERT_FROM:-incusense@localhost}
       ALERT_COOLDOWN: ${ALERT_COOLDOWN:-300}
       DRIFT_EOL_DAYS: ${DRIFT_EOL_DAYS:-7}
+      # Demo pitch-day: true abilita /api/demo/* (iniezione scenari → alert+email reali).
+      DEMO_ENABLED: ${DEMO_ENABLED:-true}
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -81,7 +83,7 @@ services:
       retries: 5
       start_period: 90s
 
-  # ── 4. Frontend v1 (Nginx) ──────────────────────────────────
+  # ── 4. Frontend (Nginx) — unico frontend, servito su http://localhost:3000 ──
   frontend:
     image: nginx:alpine
     container_name: incusense-frontend
@@ -90,19 +92,6 @@ services:
       - "127.0.0.1:3000:80"
     volumes:
       - ./frontend:/usr/share/nginx/html:ro
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - backend
-
-  # ── 5. Frontend v2 (Nginx) ──────────────────────────────────
-  frontend-v2:
-    image: nginx:alpine
-    container_name: incusense-frontend-v2
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3001:80"
-    volumes:
-      - ./frontend-v2:/usr/share/nginx/html:ro
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend

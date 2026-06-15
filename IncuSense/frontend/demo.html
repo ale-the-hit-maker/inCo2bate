@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IncuSense — Demo / Pitch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">IN</div>
+      <div class="brand-info">
+        <span class="brand-name">IncuSense</span>
+        <span class="brand-sub">Demo Mode · Pitch Day</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="demo-flag">DEMO</span>
+      <label class="hub-select">
+        <select id="hub-selector"><option value="">Nodo auto</option></select>
+      </label>
+      <a href="/dashboard.html" class="ghost-btn">Dashboard</a>
+      <a href="/contacts.html" class="ghost-btn">Contacts</a>
+      <a href="/demo.html" class="ghost-btn active">Demo</a>
+      <button id="logout-button" class="ghost-btn" type="button">Esci</button>
+    </div>
+  </header>
+
+  <main class="dashboard" style="position:relative;z-index:1;">
+
+    <section class="glass-panel panel fade-in demo-hero">
+      <p class="panel-title">Simulazione scenari dal vivo</p>
+      <p class="demo-hero-text">
+        Ogni scenario inietta una telemetria nel <strong>percorso reale</strong> della piattaforma:
+        fa scattare la stessa regola di alert di un nodo fisico e invia <strong>email vere</strong>
+        ai contatti configurati. Il funzionamento normale non è alterato.
+      </p>
+      <p class="demo-hero-hint">
+        Suggerimento: configura prima un contatto email in <a href="/contacts.html">Contacts</a>
+        e verifica che l'SMTP sia attivo (file <code>.env</code>).
+      </p>
+    </section>
+
+    <section class="glass-panel panel fade-in">
+      <div class="panel-header"><p class="panel-title">Scenari disponibili</p></div>
+      <div id="scenario-grid" class="scenario-grid">
+        <p class="muted-note">Caricamento scenari…</p>
+      </div>
+    </section>
+
+    <section class="glass-panel panel fade-in">
+      <div class="panel-header">
+        <p class="panel-title">Registro attivazioni</p>
+        <button id="clear-log" class="ghost-btn" type="button">Pulisci</button>
+      </div>
+      <ul id="demo-log" class="alerts-list">
+        <li class="nominal"><strong>Pronto</strong><span>Nessuno scenario attivato in questa sessione.</span></li>
+      </ul>
+    </section>
+
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script>
+    IncuSenseApi.requireAuth();
+    document.getElementById('logout-button').addEventListener('click', () => IncuSenseApi.logout());
+
+    const grid     = document.getElementById('scenario-grid');
+    const logList  = document.getElementById('demo-log');
+    const hubSel   = document.getElementById('hub-selector');
+    let   logEmpty = true;
+
+    const LEVEL_CLASS = { OK: 'nominal', INFO: 'info', WARN: 'warn', CRITICAL: 'critical' };
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, c =>
+        ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
+    async function loadHubs() {
+      try {
+        const hubs = await IncuSenseApi.hubs();
+        hubSel.innerHTML = '<option value="">Nodo auto</option>' +
+          hubs.map(h => `<option value="${esc(h.hubKey)}">${esc(h.hubKey)}</option>`).join('');
+      } catch (_) { /* nessun hub ancora */ }
+    }
+
+    function pushLog(result, ok) {
+      if (logEmpty) { logList.innerHTML = ''; logEmpty = false; }
+      const li = document.createElement('li');
+      li.className = ok ? (LEVEL_CLASS[result.level] || 'info') : 'critical';
+      li.innerHTML = `<strong>${esc(result.scenario)} · ${esc(result.level || 'ERR')} · ${esc(result.hubKey || '--')}</strong>`
+        + `<span>${esc(result.note || '')}</span>`
+        + `<small>${new Date().toLocaleTimeString()}</small>`;
+      logList.prepend(li);
+    }
+
+    async function fire(scenario, btn) {
+      const original = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Invio…';
+      try {
+        const res = await IncuSenseApi.triggerDemo(scenario, hubSel.value);
+        pushLog(res, true);
+        btn.textContent = 'Inviato ✓';
+      } catch (e) {
+        pushLog({ scenario, level: 'ERR', hubKey: hubSel.value, note: e.message }, false);
+        btn.textContent = 'Errore';
+      } finally {
+        setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 1200);
+      }
+    }
+
+    async function loadScenarios() {
+      try {
+        const scenarios = await IncuSenseApi.demoScenarios();
+        grid.innerHTML = '';
+        scenarios.forEach(s => {
+          const card = document.createElement('div');
+          card.className = 'scenario-card level-' + (LEVEL_CLASS[s.level] || 'info');
+          card.innerHTML = `
+            <div class="scenario-top">
+              <span class="scenario-label">${esc(s.label)}</span>
+              <span class="badge-level ${LEVEL_CLASS[s.level] || 'info'}">${esc(s.level)}</span>
+            </div>
+            <p class="scenario-desc">${esc(s.description)}</p>
+            <button class="btn-scenario" type="button">Attiva scenario</button>`;
+          card.querySelector('button').addEventListener('click', e => fire(s.id, e.currentTarget));
+          grid.appendChild(card);
+        });
+      } catch (e) {
+        grid.innerHTML = `<p class="muted-note">Demo non disponibile: ${esc(e.message)}</p>`;
+      }
+    }
+
+    document.getElementById('clear-log').addEventListener('click', () => {
+      logList.innerHTML = '<li class="nominal"><strong>Registro pulito</strong><span>—</span></li>';
+      logEmpty = true;
+    });
+
+    loadHubs();
+    loadScenarios();
+  </script>
+</body>
+</html>

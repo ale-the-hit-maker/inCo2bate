@@ -1,49 +1,83 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>IncuSense Login</title>
-    <link rel="stylesheet" href="/css/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IncuSense — Access Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="login-page">
-    <main class="login-shell">
-        <section class="login-panel">
-            <div class="brand-mark">IS</div>
-            <h1>IncuSense System</h1>
-            <p>Secure telemetry gateway for incubator sensing hubs. Please authenticate.</p>
-            <form id="login-form" class="login-form">
-                <label>
-                    Username
-                    <input name="username" autocomplete="username" required>
-                </label>
-                <label>
-                    Password
-                    <input name="password" type="password" autocomplete="current-password" required>
-                </label>
-                <button type="submit">Establish Connection</button>
-                <output id="login-error" class="error-message"></output>
-            </form>
-        </section>
-    </main>
-    <script src="/js/api.js"></script>
-    <script>
-        document.getElementById('login-form').addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const form = new FormData(event.currentTarget);
-            const output = document.getElementById('login-error');
-            output.textContent = '';
-            const btn = event.currentTarget.querySelector('button');
-            const originalText = btn.textContent;
-            btn.textContent = 'Authenticating...';
-            try {
-                await IncuSenseApi.login(form.get('username'), form.get('password'));
-                window.location.href = '/dashboard.html';
-            } catch (error) {
-                output.textContent = error.message;
-                btn.textContent = originalText;
-            }
-        });
-    </script>
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <!-- Brand hero -->
+  <div class="login-hero">
+    <div class="hero-emblem">IN</div>
+    <h1 class="hero-title">IncuSense</h1>
+    <p class="hero-tagline">CO₂ Incubator Monitoring Platform</p>
+    <p class="hero-company">by InC0<span class="co2-mark">2</span>bate Inc.</p>
+  </div>
+
+  <!-- Login card -->
+  <div class="login-card glass-panel">
+    <p class="login-card-title">Initialize Session</p>
+    <p class="login-card-sub">Enter your credentials to access the monitoring system</p>
+
+    <form id="login-form" autocomplete="off">
+      <div class="field">
+        <label class="field-label" for="username">User ID</label>
+        <input type="text" id="username" name="username" placeholder="operator" autocomplete="username" spellcheck="false">
+      </div>
+      <div class="field">
+        <label class="field-label" for="password">Access Code</label>
+        <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <p id="error-msg" class="error-msg"></p>
+      <button type="submit" class="btn-submit" id="submit-btn">Establish Connection</button>
+    </form>
+  </div>
+
+  <p class="login-footer">IncuSense v2 · Secure Access Portal · InC0₂bate Inc.</p>
+
+  <script src="/js/api.js"></script>
+  <script>
+    (function () {
+      if (localStorage.getItem('incusense.jwt')) {
+        window.location.href = '/dashboard.html';
+        return;
+      }
+
+      const form   = document.getElementById('login-form');
+      const errMsg = document.getElementById('error-msg');
+      const btn    = document.getElementById('submit-btn');
+      const card   = document.querySelector('.login-card');
+
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+        errMsg.textContent = '';
+        btn.disabled = true;
+        btn.textContent = 'Connecting…';
+
+        try {
+          await IncuSenseApi.login(username, password);
+          btn.textContent = 'Connected ✓';
+          btn.classList.add('success');
+          setTimeout(() => { window.location.href = '/dashboard.html'; }, 350);
+        } catch (_) {
+          errMsg.textContent = 'Authentication failed — check your credentials.';
+          btn.disabled = false;
+          btn.textContent = 'Establish Connection';
+          card.classList.remove('shake');
+          void card.offsetWidth;
+          card.classList.add('shake');
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

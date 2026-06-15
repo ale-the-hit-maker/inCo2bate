@@ -2,6 +2,7 @@ package com.incusense.repository;
 
 import com.incusense.model.Alert;
 import com.incusense.model.AppUser;
+import com.incusense.model.CalibrationEvent;
 import com.incusense.model.DriftReferenceCurve;
 import com.incusense.model.Lab;
 import com.incusense.model.Measurement;
@@ -100,6 +101,15 @@ public final class Repositories {
 
     @Repository
     public interface SensorHealthRepository extends JpaRepository<SensorHealth, Long> {
+    }
+
+    @Repository
+    public interface CalibrationEventRepository extends JpaRepository<CalibrationEvent, Long> {
+        List<CalibrationEvent> findByHub_Lab_LabIdOrderByCreatedAtDesc(String labId, Pageable pageable);
+
+        Optional<CalibrationEvent> findFirstByHub_IdOrderByCreatedAtDesc(Long hubId);
+
+        List<CalibrationEvent> findByHub_IdAndStatusOrderByCreatedAtDesc(Long hubId, String status);
     }
 
     public interface HistoryProjection {

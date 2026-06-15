@@ -1,125 +1,197 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>IncuSense Dashboard</title>
-    <link rel="stylesheet" href="/css/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IncuSense Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <header class="topbar">
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <!-- ── Topbar ── -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">IN</div>
+      <div class="brand-info">
+        <span class="brand-name">IncuSense</span>
+        <span class="brand-sub">CO₂ Monitoring Platform · InC0₂bate Inc.</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="lab-banner" class="lab-banner">Lab: --</span>
+      <label class="hub-select">
+        <select id="hub-selector"><option value="">All hubs</option></select>
+      </label>
+      <span id="live-badge" class="live-badge offline">
+        <span class="live-dot"></span>OFFLINE
+      </span>
+      <a href="/dashboard.html" class="ghost-btn active">Dashboard</a>
+      <a href="/contacts.html" class="ghost-btn">Contacts</a>
+      <a href="/demo.html" class="ghost-btn">Demo</a>
+      <button id="logout-button" class="ghost-btn" type="button">Terminate Session</button>
+    </div>
+  </header>
+
+  <main class="dashboard" style="position:relative;z-index:1;">
+
+    <!-- ── Status strip ── -->
+    <section class="status-strip" aria-live="polite">
+      <article class="metric-card co2 glass-panel">
+        <div class="metric-top-line"></div>
+        <p class="metric-label">CO₂ Level</p>
+        <div class="metric-value-wrap">
+          <strong id="co2-value" class="metric-value">--</strong>
+          <span class="metric-unit">ppm</span>
+        </div>
+      </article>
+      <article class="metric-card env glass-panel">
+        <div class="metric-top-line"></div>
+        <p class="metric-label">Environment</p>
+        <div class="metric-value-wrap">
+          <strong id="temp-value" class="metric-value">--</strong>
+          <span class="metric-unit">°C</span>
+        </div>
+      </article>
+      <article class="metric-card hum glass-panel">
+        <div class="metric-top-line"></div>
+        <p class="metric-label">Humidity</p>
+        <div class="metric-value-wrap">
+          <strong id="hum-value" class="metric-value">--</strong>
+          <span class="metric-unit">%</span>
+        </div>
+      </article>
+      <article class="metric-card rail glass-panel">
+        <div class="metric-top-line"></div>
+        <p class="metric-label">12V Rail</p>
+        <div class="metric-value-wrap">
+          <strong id="rail-value" class="metric-value">--</strong>
+          <span class="metric-unit">V</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- ── Historical trend ── -->
+    <section class="glass-panel panel fade-in">
+      <div class="panel-header">
         <div>
-            <span class="eyebrow">IncuSense</span>
-            <h1>Telemetry Overview</h1>
-            <small id="lab-banner" class="lab-banner">Lab: --</small>
+          <p class="panel-title" id="chart-title">Trend Storico</p>
+          <p class="panel-subtitle" id="last-update">Awaiting signal…</p>
         </div>
-        <div class="topbar-actions">
-            <span id="live-badge" class="live-badge offline" title="Live connection status">OFFLINE</span>
-            <label class="hub-select">
-                <select id="hub-selector"><option value="">All hubs</option></select>
-            </label>
-            <a href="/contacts.html" class="ghost-button" role="button">Contacts</a>
-            <button id="logout-button" class="ghost-button" type="button">Terminate Session</button>
+        <div class="chart-controls">
+          <select id="chart-window-selector">
+            <option value="live" selected>Live (tempo reale)</option>
+            <option value="1">24 ore</option>
+            <option value="7">7 giorni</option>
+            <option value="30">30 giorni</option>
+            <option value="90">3 mesi</option>
+            <option value="180">6 mesi</option>
+          </select>
+          <select id="chart-metric-selector">
+            <option value="co2Ppm">CO₂ (ppm)</option>
+            <option value="heaterTemp">Heater Temp (°C)</option>
+            <option value="envTemp">Env Temp (°C)</option>
+            <option value="envHum">Humidity (%)</option>
+            <option value="rail12v">12V Rail (V)</option>
+          </select>
         </div>
-    </header>
+      </div>
+      <div style="position:relative;height:300px;width:100%">
+        <canvas id="history-chart"></canvas>
+      </div>
+    </section>
 
-    <main class="dashboard">
-        <section class="status-strip" aria-live="polite">
-            <article class="metric-card co2">
-                <span>CO2 Level</span>
-                <div><strong id="co2-value">--</strong> <small>ppm</small></div>
-            </article>
-            <article class="metric-card env">
-                <span>Environment</span>
-                <div><strong id="temp-value">--</strong> <small>°C</small></div>
-            </article>
-            <article class="metric-card hum">
-                <span>Humidity</span>
-                <div><strong id="hum-value">--</strong> <small>%</small></div>
-            </article>
-            <article class="metric-card rail">
-                <span>12V Rail</span>
-                <div><strong id="rail-value">--</strong> <small>V</small></div>
-            </article>
-        </section>
+    <!-- ── Content grid ── -->
+    <div class="content-grid">
+      <!-- Latest measurements -->
+      <div class="glass-panel panel fade-in">
+        <div class="panel-header">
+          <p class="panel-title">Latest Measurements</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Hub ID</th>
+                <th>CO₂ (ppm)</th>
+                <th>Heater (°C)</th>
+                <th>Env (°C)</th>
+                <th>Hum (%)</th>
+                <th>12V Rail</th>
+              </tr>
+            </thead>
+            <tbody id="measurements-body"></tbody>
+          </table>
+        </div>
+      </div>
 
-        <section class="panel">
-            <div class="panel-header">
-                <h2 id="chart-title">Trend Storico</h2>
-                <div class="chart-controls">
-                    <select id="chart-window-selector">
-                        <option value="1">24 ore</option>
-                        <option value="7">7 giorni</option>
-                        <option value="30">30 giorni</option>
-                        <option value="90">3 mesi</option>
-                        <option value="180" selected>6 mesi</option>
-                    </select>
-                    <select id="chart-metric-selector">
-                        <option value="co2Ppm">CO2 Level (ppm)</option>
-                        <option value="heaterTemp">Heater Temp (°C)</option>
-                        <option value="envTemp">Env Temp (°C)</option>
-                        <option value="envHum">Humidity (%)</option>
-                        <option value="rail12v">12V Rail (V)</option>
-                    </select>
-                </div>
-            </div>
-            <div style="position: relative; height:320px; width:100%">
-                <canvas id="history-chart"></canvas>
-            </div>
-        </section>
+      <!-- Alerts -->
+      <div class="glass-panel panel fade-in">
+        <div class="panel-header">
+          <p class="panel-title">System Alerts</p>
+        </div>
+        <ul id="alerts-list" class="alerts-list"></ul>
+      </div>
+    </div>
 
-        <section class="content-grid">
-            <div class="panel wide">
-                <div class="panel-header">
-                    <h2>Latest Measurements</h2>
-                    <span id="last-update" class="neon-text">Awaiting signal...</span>
-                </div>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                        <tr>
-                            <th>Timestamp</th>
-                            <th>Hub ID</th>
-                            <th>CO2 (ppm)</th>
-                            <th>Heater (°C)</th>
-                            <th>Env (°C)</th>
-                            <th>Hum (%)</th>
-                            <th>12V Rail</th>
-                        </tr>
-                        </thead>
-                        <tbody id="measurements-body"></tbody>
-                    </table>
-                </div>
-            </div>
+    <!-- ── Sensor health & drift ── -->
+    <section class="glass-panel panel fade-in">
+      <div class="panel-header">
+        <div>
+          <p class="panel-title">Sensor Health &amp; Drift</p>
+          <p class="panel-subtitle">Manutenzione predittiva: drift del sensore vs baseline di installazione</p>
+        </div>
+        <span id="health-status" class="health-badge unknown">UNKNOWN</span>
+      </div>
+      <div class="health-grid">
+        <div class="health-stat"><span>Observed drift</span><strong id="health-drift">--</strong></div>
+        <div class="health-stat"><span>Operating hours</span><strong id="health-hours">--</strong></div>
+        <div class="health-stat"><span>Projected end-of-life</span><strong id="health-eol">--</strong></div>
+        <div class="health-stat"><span>Current response</span><strong id="health-resp">--</strong></div>
+      </div>
 
-            <div class="panel">
-                <div class="panel-header">
-                    <h2>System Alerts</h2>
-                </div>
-                <ul id="alerts-list" class="alerts-list"></ul>
-            </div>
-        </section>
+      <!-- Drift meter: 0 → 20% (soglia EOL) con zona d'azione a 5% -->
+      <div class="drift-meter">
+        <div class="drift-meter-head">
+          <span>DRIFT 0%</span>
+          <span id="drift-meter-value">--</span>
+          <span>EOL 20%</span>
+        </div>
+        <div class="drift-track">
+          <div id="drift-fill" class="drift-fill"></div>
+          <div class="drift-tick" style="left:25%" title="Soglia azione 5%"></div>
+          <div class="drift-tick eol" style="left:100%" title="Soglia EOL 20%"></div>
+        </div>
+        <div class="drift-legend">
+          <i class="lg-ok">stabile (&lt;5%)</i>
+          <i class="lg-action">correzione possibile (5–20%)</i>
+          <i class="lg-eol">fine vita (≥20%)</i>
+        </div>
+      </div>
 
-        <section class="panel">
-            <div class="panel-header">
-                <h2>Sensor Health</h2>
-                <span id="health-status" class="health-badge unknown">UNKNOWN</span>
-            </div>
-            <div class="health-grid">
-                <div class="health-stat"><span>Observed drift</span><strong id="health-drift">--</strong></div>
-                <div class="health-stat"><span>Operating hours</span><strong id="health-hours">--</strong></div>
-                <div class="health-stat"><span>Projected end-of-life</span><strong id="health-eol">--</strong></div>
-                <div class="health-stat"><span>Current response</span><strong id="health-resp">--</strong></div>
-            </div>
-            <p class="muted-note">Select a hub above to monitor its sensor drift. Predictive maintenance raises an alert before the sensor degrades past tolerance.</p>
-        </section>
-    </main>
+      <!-- Eventi drift / calibrazione -->
+      <div class="panel-header" style="margin-top:18px;">
+        <p class="panel-title" style="font-size:12px;">Eventi drift &amp; calibrazione</p>
+      </div>
+      <ul id="cal-events" class="cal-events">
+        <li class="cal-events-empty">Nessun evento di drift o calibrazione registrato.</li>
+      </ul>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs/bundles/stomp.umd.min.js"></script>
-    <script src="/js/api.js"></script>
-    <script src="/js/dashboard.js"></script>
-    <script src="/js/realtime.js"></script>
+      <p class="muted-note">Seleziona un hub in alto per monitorare il suo sensore. Quando il drift supera la zona d'azione il sistema segnala (e in futuro correggerà automaticamente) la deriva; oltre la soglia EOL viene richiesta la sostituzione.</p>
+    </section>
+
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs/bundles/stomp.umd.min.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/dashboard.js"></script>
+  <script src="/js/realtime.js"></script>
 </body>
 </html>

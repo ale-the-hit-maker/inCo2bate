@@ -1,106 +1,147 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>IncuSense Notification Contacts</title>
-    <link rel="stylesheet" href="/css/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IncuSense — Notification Contacts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <header class="topbar">
-        <div>
-            <span class="eyebrow">IncuSense</span>
-            <h1>Notification Contacts</h1>
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">IN</div>
+      <div class="brand-info">
+        <span class="brand-name">IncuSense</span>
+        <span class="brand-sub">Notification Contacts</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <a href="/dashboard.html" class="ghost-btn">Dashboard</a>
+      <a href="/contacts.html" class="ghost-btn active">Contacts</a>
+      <a href="/demo.html" class="ghost-btn">Demo</a>
+      <button id="logout-button" class="ghost-btn" type="button">Terminate Session</button>
+    </div>
+  </header>
+
+  <main class="dashboard" style="position:relative;z-index:1;">
+
+    <!-- Add contact form -->
+    <section class="glass-panel panel fade-in">
+      <div class="panel-header">
+        <p class="panel-title">Add Contact</p>
+      </div>
+      <form id="contact-form" class="inline-form">
+        <div class="field">
+          <label class="field-label">Label</label>
+          <input name="label" required placeholder="On-call scientist">
         </div>
-        <div class="topbar-actions">
-            <a href="/dashboard.html" class="ghost-button" role="button">Dashboard</a>
-            <button id="logout-button" class="ghost-button" type="button">Terminate Session</button>
+        <div class="field">
+          <label class="field-label">Email</label>
+          <input name="target" type="email" required placeholder="name@lab.org">
         </div>
-    </header>
+        <div class="field">
+          <label class="field-label">Min Level</label>
+          <select name="minLevel">
+            <option value="INFO">INFO</option>
+            <option value="WARN" selected>WARN</option>
+            <option value="CRITICAL">CRITICAL</option>
+          </select>
+        </div>
+        <div class="checkbox-wrap">
+          <input type="checkbox" name="enabled" id="enabled-check" checked>
+          <label for="enabled-check">Enabled</label>
+        </div>
+        <button type="submit" class="btn-add">Add Contact</button>
+        <span id="contact-error" class="form-error"></span>
+      </form>
+    </section>
 
-    <main class="dashboard">
-        <section class="panel">
-            <div class="panel-header"><h2>Add contact</h2></div>
-            <form id="contact-form" class="inline-form">
-                <label>Label<input name="label" required placeholder="On-call scientist"></label>
-                <label>Email<input name="target" type="email" required placeholder="name@lab.org"></label>
-                <label>Min level
-                    <select name="minLevel">
-                        <option value="INFO">INFO</option>
-                        <option value="WARN" selected>WARN</option>
-                        <option value="CRITICAL">CRITICAL</option>
-                    </select>
-                </label>
-                <label class="checkbox-inline"><input type="checkbox" name="enabled" checked> Enabled</label>
-                <button type="submit">Add</button>
-                <output id="contact-error" class="error-message"></output>
-            </form>
-        </section>
+    <!-- Contacts table -->
+    <section class="glass-panel panel fade-in">
+      <div class="panel-header">
+        <p class="panel-title">Active Contacts</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>Channel</th>
+              <th>Email</th>
+              <th>Min Level</th>
+              <th>Enabled</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="contacts-body"></tbody>
+        </table>
+      </div>
+    </section>
 
-        <section class="panel wide">
-            <div class="panel-header"><h2>Contacts</h2></div>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr><th>Label</th><th>Channel</th><th>Email</th><th>Min level</th><th>Enabled</th><th></th></tr>
-                    </thead>
-                    <tbody id="contacts-body"></tbody>
-                </table>
-            </div>
-        </section>
-    </main>
+  </main>
 
-    <script src="/js/api.js"></script>
-    <script>
-        IncuSenseApi.requireAuth();
-        document.getElementById('logout-button').addEventListener('click', () => IncuSenseApi.logout());
-        const body = document.getElementById('contacts-body');
-        const errorOut = document.getElementById('contact-error');
+  <script src="/js/api.js"></script>
+  <script>
+    IncuSenseApi.requireAuth();
+    document.getElementById('logout-button').addEventListener('click', () => IncuSenseApi.logout());
 
-        async function refresh() {
-            const contacts = await IncuSenseApi.notificationContacts();
-            body.innerHTML = contacts.map((c) => `
-                <tr>
-                    <td>${escapeHtml(c.label)}</td>
-                    <td>${c.channel}</td>
-                    <td>${escapeHtml(c.target)}</td>
-                    <td>${c.minLevel}</td>
-                    <td>${c.enabled ? 'Yes' : 'No'}</td>
-                    <td><button type="button" class="ghost-button danger" data-id="${c.id}">Delete</button></td>
-                </tr>`).join('') || '<tr><td colspan="6">No contacts yet.</td></tr>';
-            body.querySelectorAll('button[data-id]').forEach((btn) => {
-                btn.addEventListener('click', async () => {
-                    if (!confirm('Delete this contact? This cannot be undone.')) return;
-                    await IncuSenseApi.deleteContact(btn.getAttribute('data-id'));
-                    refresh();
-                });
-            });
-        }
+    const tbody   = document.getElementById('contacts-body');
+    const errSpan = document.getElementById('contact-error');
 
-        function escapeHtml(s) {
-            return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-        }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
 
-        document.getElementById('contact-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            errorOut.textContent = '';
-            const f = new FormData(e.currentTarget);
-            try {
-                await IncuSenseApi.createContact({
-                    label: f.get('label'),
-                    channel: 'EMAIL',
-                    target: f.get('target'),
-                    minLevel: f.get('minLevel'),
-                    enabled: f.get('enabled') === 'on'
-                });
-                e.currentTarget.reset();
-                refresh();
-            } catch (err) {
-                errorOut.textContent = err.message;
-            }
+    async function refresh() {
+      const contacts = await IncuSenseApi.notificationContacts();
+      tbody.innerHTML = contacts.length
+        ? contacts.map(c => `
+            <tr>
+              <td>${escapeHtml(c.label)}</td>
+              <td>${escapeHtml(c.channel)}</td>
+              <td>${escapeHtml(c.target)}</td>
+              <td>${c.minLevel}</td>
+              <td>${c.enabled ? 'Yes' : 'No'}</td>
+              <td><button class="btn-del" data-id="${c.id}">Delete</button></td>
+            </tr>`).join('')
+        : '<tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:24px">No contacts configured.</td></tr>';
+
+      tbody.querySelectorAll('.btn-del').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this contact? This cannot be undone.')) return;
+          await IncuSenseApi.deleteContact(btn.dataset.id);
+          refresh();
         });
+      });
+    }
 
+    document.getElementById('contact-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      errSpan.textContent = '';
+      const f = new FormData(e.currentTarget);
+      try {
+        await IncuSenseApi.createContact({
+          label:    f.get('label'),
+          channel:  'EMAIL',
+          target:   f.get('target'),
+          minLevel: f.get('minLevel'),
+          enabled:  f.get('enabled') === 'on'
+        });
+        e.currentTarget.reset();
         refresh();
-    </script>
+      } catch (err) {
+        errSpan.textContent = err.message;
+      }
+    });
+
+    refresh();
+  </script>
 </body>
 </html>

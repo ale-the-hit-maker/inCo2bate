@@ -25,6 +25,8 @@ public class MqttIngestionService {
             Pattern.compile("^incusense/labs/([^/]+)/hubs/([^/]+)/telemetry$");
     private static final Pattern STATUS_TOPIC =
             Pattern.compile("^incusense/labs/([^/]+)/hubs/([^/]+)/status$");
+    private static final Pattern ACK_TOPIC =
+            Pattern.compile("^incusense/labs/([^/]+)/hubs/([^/]+)/ack$");
 
     private final ObjectMapper objectMapper;
     private final Repositories.LabRepository labRepository;
@@ -33,6 +35,7 @@ public class MqttIngestionService {
     private final CalibrationService calibrationService;
     private final AlertService alertService;
     private final DriftMonitoringService driftMonitoringService;
+    private final AutoCalibrationService autoCalibrationService;
     private final SimpMessagingTemplate messagingTemplate;
 
     public MqttIngestionService(ObjectMapper objectMapper,
@@ -42,6 +45,7 @@ public class MqttIngestionService {
                                 CalibrationService calibrationService,
                                 AlertService alertService,
                                 DriftMonitoringService driftMonitoringService,
+                                AutoCalibrationService autoCalibrationService,
                                 SimpMessagingTemplate messagingTemplate) {
         this.objectMapper = objectMapper;
         this.labRepository = labRepository;
@@ -50,6 +54,7 @@ public class MqttIngestionService {
         this.calibrationService = calibrationService;
         this.alertService = alertService;
         this.driftMonitoringService = driftMonitoringService;
+        this.autoCalibrationService = autoCalibrationService;
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -65,7 +70,31 @@ public class MqttIngestionService {
             log.debug("[MQTT] status from lab={} hub={}: {}", status.group(1), status.group(2), rawPayload);
             return;
         }
+        Matcher ack = ACK_TOPIC.matcher(topic == null ? "" : topic);
+        if (ack.matches()) {
+            ingestAck(ack.group(1), ack.group(2), rawPayload);
+            return;
+        }
         log.warn("[MQTT] ignoring message on unrecognized topic: {}", topic);
+    }
+
+    /**
+     * ACK di calibrazione dal nodo: {@code {"hub_id","command","status","event_id","ts"}}.
+     * Correla l'evento via {@code event_id} e aggiorna il lifecycle (AutoCalibrationService).
+     */
+    private void ingestAck(String labId, String hubKey, String rawPayload) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode n = objectMapper.readTree(rawPayload);
+            if (!n.hasNonNull("event_id")) {
+                log.debug("[MQTT] ack senza event_id lab={} hub={}: {}", labId, hubKey, rawPayload);
+                return;
+            }
+            long eventId = n.get("event_id").asLong();
+            String status = n.hasNonNull("status") ? n.get("status").asText() : "OK";
+            autoCalibrationService.handleAck(eventId, status);
+        } catch (Exception ex) {
+            log.warn("[MQTT] ack non interpretabile lab={} hub={} payload={}", labId, hubKey, rawPayload, ex);
+        }
     }
 
     private void ingestTelemetry(String labId, String hubKey, String rawPayload) {

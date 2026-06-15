@@ -593,15 +593,23 @@ void Task_ThermalControl(void *pvParameters) {
 
 // ── Task_Sensing  [ADATTATO: calibrazione + raw_adc + sensor_response] ──
 void Task_Sensing(void *pvParameters) {
-    float simulated_time = 0.0f;
+    // [v3.1] DATA MOCKING — riempimento incubatore realistico.
+    // La CO2 simulata parte dall'aria pulita (baseline ADC) e sale con
+    // andamento esponenziale del primo ordine fino a stabilizzarsi al
+    // setpoint dell'incubatore (5% = 50.000 ppm ≈ ADC 2115), con un
+    // piccolo rumore di misura sovrapposto (±3 LSB ≈ ±200 ppm).
+    const float SIM_TARGET_ADC = 2115.0f;  // ≈ 50.000 ppm con baseline 1380
+    const float SIM_RISE_K     = 0.015f;   // costante di salita (~3-4 min a regime, 1 Hz)
+    static float sim_adc       = ADC_AIR_BASELINE; // parte da aria pulita (400 ppm)
 
     while (1) {
         // -----------------------------------------------------------
-        // 1. DATA MOCKING (Sensore a 5% CO2)  (INVARIATO)
+        // 1. DATA MOCKING (riempimento + regime a 50.000 ppm)
         // -----------------------------------------------------------
-        float avgTia  = 1747.0f + 367.0f * sin(simulated_time);
+        sim_adc += (SIM_TARGET_ADC - sim_adc) * SIM_RISE_K;       // salita esponenziale
+        float noise   = (float)random(-30, 31) * 0.1f;            // ±3 ADC ≈ ±200 ppm
+        float avgTia  = sim_adc + noise;
         float avgVmon = 2948.0f;
-        simulated_time += 0.05f;
 
         // -----------------------------------------------------------
         // 2. CONVERSIONE FISICA ADC -> PPM

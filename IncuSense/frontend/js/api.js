@@ -96,6 +96,15 @@
         },
         deleteContact(id) {
             return request(`/api/notification-contacts/${id}`, { method: 'DELETE' });
+        },
+        demoScenarios() {
+            return request('/api/demo/scenarios');
+        },
+        triggerDemo(scenario, hubKey) {
+            return request('/api/demo/scenario', {
+                method: 'POST',
+                body: JSON.stringify({ scenario, hubKey: hubKey || null })
+            });
         }
     };
 })();

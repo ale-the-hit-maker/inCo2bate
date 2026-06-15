@@ -41,15 +41,18 @@ public class DriftMonitoringService {
     private final Repositories.SensorHealthRepository healthRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final AlertService alertService;
+    private final AutoCalibrationService autoCalibrationService;
     private final int degradingEolDays;
 
     public DriftMonitoringService(Repositories.SensorHealthRepository healthRepository,
                                   SimpMessagingTemplate messagingTemplate,
                                   AlertService alertService,
+                                  AutoCalibrationService autoCalibrationService,
                                   @Value("${incusense.drift.degrading-eol-days:7}") int degradingEolDays) {
         this.healthRepository = healthRepository;
         this.messagingTemplate = messagingTemplate;
         this.alertService = alertService;
+        this.autoCalibrationService = autoCalibrationService;
         this.degradingEolDays = degradingEolDays;
     }
 
@@ -84,6 +87,7 @@ public class DriftMonitoringService {
         if (health.getOperatingHours() <= WARMUP_HOURS || health.getInstallResponse() == null
                 || health.getInstallResponse() == 0.0) {
             persistAndBroadcast(hub, health);
+            autoCalibrationService.evaluate(hub, health, measurement); // accumula EWMA, nessuna azione in warm-up
             return;
         }
 
@@ -124,6 +128,10 @@ public class DriftMonitoringService {
                     String.format("Sensor drift %.1f%%; projected end-of-life within %d days", driftPct, degradingEolDays))
                     .ifPresent(a -> broadcastAlert(hub, a));
         }
+
+        // 7) auto-calibrazione semi-real-time (no-op se disabilitata): valuta il campione
+        //    per un'eventuale correzione closed-loop verso il nodo (vedi AutoCalibrationService).
+        autoCalibrationService.evaluate(hub, health, measurement);
     }
 
     private void persistAndBroadcast(SensingHub hub, SensorHealth health) {

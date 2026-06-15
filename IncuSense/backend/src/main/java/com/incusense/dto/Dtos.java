@@ -2,6 +2,7 @@ package com.incusense.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.incusense.model.Alert;
+import com.incusense.model.CalibrationEvent;
 import com.incusense.model.Lab;
 import com.incusense.model.Measurement;
 import com.incusense.model.NotificationContact;
@@ -151,5 +152,31 @@ public final class Dtos {
     }
 
     public record AssignCurveRequest(Long curveId, Double installResponse) {
+    }
+
+    public record CalibrationEventResponse(
+            Long id,
+            String hubKey,
+            String command,
+            String status,
+            Double requestedOffsetPpm,
+            Double driftPctAtRequest,
+            String reason,
+            Instant createdAt,
+            Instant ackedAt,
+            Instant verifiedAt) {
+        public static CalibrationEventResponse from(CalibrationEvent e) {
+            return new CalibrationEventResponse(
+                    e.getId(),
+                    e.getHub().getHubKey(),
+                    e.getCommand(),
+                    e.getStatus(),
+                    e.getRequestedOffsetPpm(),
+                    e.getDriftPctAtRequest(),
+                    e.getReason(),
+                    e.getCreatedAt(),
+                    e.getAckedAt(),
+                    e.getVerifiedAt());
+        }
     }
 }
