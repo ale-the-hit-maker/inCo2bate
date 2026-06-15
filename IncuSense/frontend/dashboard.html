@@ -39,6 +39,9 @@
 
   <main class="dashboard" style="position:relative;z-index:1;">
 
+    <!-- ══ ZONA 1 · Stato attuale ══ -->
+    <div class="section-divider"><span class="section-divider-label"><span class="sd-accent">01</span> &nbsp;Stato attuale</span></div>
+
     <!-- ── Status strip ── -->
     <section class="status-strip" aria-live="polite">
       <article class="metric-card co2 glass-panel">
@@ -75,6 +78,9 @@
       </article>
     </section>
 
+    <!-- ══ ZONA 2 · Andamento ══ -->
+    <div class="section-divider"><span class="section-divider-label"><span class="sd-accent">02</span> &nbsp;Andamento</span></div>
+
     <!-- ── Historical trend ── -->
     <section class="glass-panel panel fade-in">
       <div class="panel-header">
@@ -104,6 +110,55 @@
         <canvas id="history-chart"></canvas>
       </div>
     </section>
+
+    <!-- ══ ZONA 3 · Salute sensore & Drift (in evidenza) ══ -->
+    <div class="section-divider"><span class="section-divider-label"><span class="sd-accent">03</span> &nbsp;Salute sensore &amp; Drift</span></div>
+
+    <section class="glass-panel panel panel-feature fade-in" id="drift-panel">
+      <div class="panel-header">
+        <div>
+          <p class="panel-title">Monitoraggio Drift &amp; Manutenzione Predittiva</p>
+          <p class="panel-subtitle">Drift del sensore vs baseline di installazione · curva di stabilità attorno a 50.000 ppm (5% CO₂)</p>
+        </div>
+        <span id="health-status" class="health-badge unknown">UNKNOWN</span>
+      </div>
+
+      <div class="health-grid">
+        <div class="health-stat"><span>Observed drift</span><strong id="health-drift">--</strong></div>
+        <div class="health-stat"><span>Operating hours</span><strong id="health-hours">--</strong></div>
+        <div class="health-stat"><span>Projected end-of-life</span><strong id="health-eol">--</strong></div>
+        <div class="health-stat"><span>Current response</span><strong id="health-resp">--</strong></div>
+      </div>
+
+      <!-- Drift meter: 0 → 20% (soglia EOL) con zona d'azione a 5% -->
+      <div class="drift-meter">
+        <div class="drift-meter-head">
+          <span>DRIFT 0%</span>
+          <span id="drift-meter-value">--</span>
+          <span>EOL 20%</span>
+        </div>
+        <div class="drift-track">
+          <div id="drift-fill" class="drift-fill"></div>
+          <div class="drift-tick" style="left:25%" title="Soglia azione 5%"></div>
+          <div class="drift-tick eol" style="left:100%" title="Soglia EOL 20%"></div>
+        </div>
+        <div class="drift-legend">
+          <i class="lg-ok">stabile (&lt;5%)</i>
+          <i class="lg-action">correzione possibile (5–20%)</i>
+          <i class="lg-eol">fine vita (&geq;20%)</i>
+        </div>
+      </div>
+
+      <p class="subsection-title">Eventi drift &amp; calibrazione</p>
+      <ul id="cal-events" class="cal-events">
+        <li class="cal-events-empty">Nessun evento di drift o calibrazione registrato.</li>
+      </ul>
+
+      <p class="muted-note">Seleziona un hub in alto per monitorare il suo sensore. In banda d'azione (5–20%) il sistema segnala e, con curva assegnata, applica l'auto-correzione closed-loop verso il nodo; oltre la soglia EOL (&geq;20%) viene richiesta la sostituzione.</p>
+    </section>
+
+    <!-- ══ ZONA 4 · Telemetria & Alert ══ -->
+    <div class="section-divider"><span class="section-divider-label"><span class="sd-accent">04</span> &nbsp;Telemetria &amp; Alert</span></div>
 
     <!-- ── Content grid ── -->
     <div class="content-grid">
@@ -138,52 +193,6 @@
         <ul id="alerts-list" class="alerts-list"></ul>
       </div>
     </div>
-
-    <!-- ── Sensor health & drift ── -->
-    <section class="glass-panel panel fade-in">
-      <div class="panel-header">
-        <div>
-          <p class="panel-title">Sensor Health &amp; Drift</p>
-          <p class="panel-subtitle">Manutenzione predittiva: drift del sensore vs baseline di installazione</p>
-        </div>
-        <span id="health-status" class="health-badge unknown">UNKNOWN</span>
-      </div>
-      <div class="health-grid">
-        <div class="health-stat"><span>Observed drift</span><strong id="health-drift">--</strong></div>
-        <div class="health-stat"><span>Operating hours</span><strong id="health-hours">--</strong></div>
-        <div class="health-stat"><span>Projected end-of-life</span><strong id="health-eol">--</strong></div>
-        <div class="health-stat"><span>Current response</span><strong id="health-resp">--</strong></div>
-      </div>
-
-      <!-- Drift meter: 0 → 20% (soglia EOL) con zona d'azione a 5% -->
-      <div class="drift-meter">
-        <div class="drift-meter-head">
-          <span>DRIFT 0%</span>
-          <span id="drift-meter-value">--</span>
-          <span>EOL 20%</span>
-        </div>
-        <div class="drift-track">
-          <div id="drift-fill" class="drift-fill"></div>
-          <div class="drift-tick" style="left:25%" title="Soglia azione 5%"></div>
-          <div class="drift-tick eol" style="left:100%" title="Soglia EOL 20%"></div>
-        </div>
-        <div class="drift-legend">
-          <i class="lg-ok">stabile (&lt;5%)</i>
-          <i class="lg-action">correzione possibile (5–20%)</i>
-          <i class="lg-eol">fine vita (≥20%)</i>
-        </div>
-      </div>
-
-      <!-- Eventi drift / calibrazione -->
-      <div class="panel-header" style="margin-top:18px;">
-        <p class="panel-title" style="font-size:12px;">Eventi drift &amp; calibrazione</p>
-      </div>
-      <ul id="cal-events" class="cal-events">
-        <li class="cal-events-empty">Nessun evento di drift o calibrazione registrato.</li>
-      </ul>
-
-      <p class="muted-note">Seleziona un hub in alto per monitorare il suo sensore. Quando il drift supera la zona d'azione il sistema segnala (e in futuro correggerà automaticamente) la deriva; oltre la soglia EOL viene richiesta la sostituzione.</p>
-    </section>
 
   </main>
 

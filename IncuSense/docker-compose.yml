@@ -71,6 +71,12 @@ services:
       DRIFT_EOL_DAYS: ${DRIFT_EOL_DAYS:-7}
       # Demo pitch-day: true abilita /api/demo/* (iniezione scenari → alert+email reali).
       DEMO_ENABLED: ${DEMO_ENABLED:-true}
+      # Auto-calibrazione closed-loop (piattaforma → nodo) ATTIVA: la piattaforma puo' inviare
+      # OFFSET_CAL ai nodi. Guard-rail di sicurezza: nessun comando senza curva assegnata/fittata
+      # (esponente b) + baseline a regime; variazione troppo rapida (anomalia/guasto) → SKIP.
+      # Il firmware supporta gia' OFFSET_CAL additivo: nessun ri-flash per i nodi aggiornati.
+      AUTOCAL_ENABLED: ${AUTOCAL_ENABLED:-true}
+      AUTOCAL_MAX_DRIFT_RATE_PCT_PER_DAY: ${AUTOCAL_MAX_DRIFT_RATE_PCT_PER_DAY:-3}
     depends_on:
       timescaledb:
         condition: service_healthy

@@ -41,20 +41,28 @@ public final class CalibrationCurve {
     private final Double r2;
     private final double validPpmMin;
     private final double validPpmMax;
+    private final Double sigmaLog;     // dispersione log10 dei residui (ampiezza banda); null se assente
+    private final double anchorPpm;    // ppm dell'ancora (scala firmware); NaN se assente
+    private final double anchorResponse; // response misurato all'ancora (scala firmware); NaN se assente
 
     private CalibrationCurve(boolean fitted, double a, double b, Double r2,
-                            double validPpmMin, double validPpmMax) {
+                            double validPpmMin, double validPpmMax,
+                            Double sigmaLog, double anchorPpm, double anchorResponse) {
         this.fitted = fitted;
         this.a = a;
         this.b = b;
         this.r2 = r2;
         this.validPpmMin = validPpmMin;
         this.validPpmMax = validPpmMax;
+        this.sigmaLog = sigmaLog;
+        this.anchorPpm = anchorPpm;
+        this.anchorResponse = anchorResponse;
     }
 
     /** Curva "non fittata": coefficienti assenti -> nessuna conversione disponibile. */
     public static CalibrationCurve unfitted() {
-        return new CalibrationCurve(false, Double.NaN, Double.NaN, null, Double.NaN, Double.NaN);
+        return new CalibrationCurve(false, Double.NaN, Double.NaN, null, Double.NaN, Double.NaN,
+                null, Double.NaN, Double.NaN);
     }
 
     /**
@@ -86,7 +94,23 @@ public final class CalibrationCurve {
                 lo = range.get(0).asDouble();
                 hi = range.get(1).asDouble();
             }
-            return new CalibrationCurve(true, a, b, r2, lo, hi);
+
+            // dispersione log dei residui (ampiezza banda di stabilita'), opzionale
+            Double sigmaLog = (n.hasNonNull("sigma_log") && n.get("sigma_log").asDouble() > 0)
+                    ? n.get("sigma_log").asDouble() : null;
+
+            // ancora alla scala firmware, opzionale: { anchor_ppm, anchor_response }
+            double anchorPpm = Double.NaN, anchorResponse = Double.NaN;
+            JsonNode anchor = n.get("anchor");
+            if (anchor != null && anchor.isObject()) {
+                if (anchor.hasNonNull("anchor_ppm")) {
+                    anchorPpm = anchor.get("anchor_ppm").asDouble();
+                }
+                if (anchor.hasNonNull("anchor_response")) {
+                    anchorResponse = anchor.get("anchor_response").asDouble();
+                }
+            }
+            return new CalibrationCurve(true, a, b, r2, lo, hi, sigmaLog, anchorPpm, anchorResponse);
         } catch (Exception ex) {
             return unfitted();
         }
@@ -162,5 +186,83 @@ public final class CalibrationCurve {
             return OptionalDouble.empty();
         }
         return OptionalDouble.of(responseDriftFraction / b);
+    }
+
+    // =====================================================================
+    // Curva di stabilita' e ancoraggio alla scala firmware (V7)
+    // =====================================================================
+
+    /** Dispersione log10 dei residui del fit (meta'-ampiezza della banda), se presente. */
+    public Optional<Double> sigmaLog() {
+        return Optional.ofNullable(sigmaLog);
+    }
+
+    /** True se il JSON porta un'ancora certificata sulla scala firmware (response misurato a ppm noto). */
+    public boolean hasCertifiedAnchor() {
+        return fitted && Double.isFinite(anchorResponse) && anchorResponse > 0
+                && Double.isFinite(anchorPpm) && anchorPpm > 0;
+    }
+
+    public OptionalDouble anchorPpm() {
+        return Double.isFinite(anchorPpm) ? OptionalDouble.of(anchorPpm) : OptionalDouble.empty();
+    }
+
+    public OptionalDouble anchorResponse() {
+        return (Double.isFinite(anchorResponse) && anchorResponse > 0)
+                ? OptionalDouble.of(anchorResponse) : OptionalDouble.empty();
+    }
+
+    /**
+     * Meta'-ampiezza della BANDA DI STABILITA' espressa come frazione (relativa) del response,
+     * derivata dalla dispersione log: una deviazione entro {@code 10^(k*sigma_log)-1} (lato alto)
+     * e' considerata fisiologica. E' una quantita' RELATIVA, quindi valida anche sulla scala
+     * firmware [0,1] (auto-riferita). Vuoto se {@code sigma_log} non e' definito.
+     *
+     * @param kSigma numero di sigma (es. 3 per la banda d'azione)
+     */
+    public OptionalDouble stabilityBandFractionUpper(double kSigma) {
+        if (!fitted || sigmaLog == null || !(kSigma > 0)) {
+            return OptionalDouble.empty();
+        }
+        return OptionalDouble.of(Math.pow(10.0, kSigma * sigmaLog) - 1.0);
+    }
+
+    /**
+     * Conversione ASSOLUTA response->ppm ANCORATA, sulla scala del firmware e fisicamente
+     * fondata: {@code ppm = anchorPpm * (response / anchorResponse)^(1/b)}.
+     *
+     * <p>Non usa mai l'intercetta {@code a} del paper (scala diversa): usa solo l'esponente
+     * {@code b} (invariante di scala) e un punto di ancoraggio MISURATO sulla stessa scala
+     * del {@code response} passato. L'ancora puo' essere la install baseline catturata a regime
+     * (ppm = setpoint) oppure un riferimento certificato.
+     *
+     * @param response       response corrente (stessa scala dell'ancora, es. firmware [0,1])
+     * @param anchorResponse response misurato all'ancora (>0)
+     * @param anchorPpm      concentrazione nota all'ancora (>0)
+     * @return ppm stimati, oppure vuoto se input non validi o curva non fittata
+     */
+    public OptionalDouble ppmFromAnchoredResponse(double response, double anchorResponse, double anchorPpm) {
+        if (!fitted || !(response > 0) || !(anchorResponse > 0) || !(anchorPpm > 0)) {
+            return OptionalDouble.empty();
+        }
+        double ppm = anchorPpm * Math.pow(response / anchorResponse, 1.0 / b);
+        return Double.isFinite(ppm) ? OptionalDouble.of(ppm) : OptionalDouble.empty();
+    }
+
+    /**
+     * Errore di concentrazione implicato dal drift del response rispetto alla baseline misurata
+     * al setpoint: {@code ppmImplied - setpoint}, con {@code ppmImplied} dalla conversione ancorata
+     * (anchor = baseline @ setpoint). Positivo = il sensore implica piu' CO2 del vero (sovrastima),
+     * quindi l'offset correttivo additivo da inviare e' l'opposto del valore restituito.
+     *
+     * @param response   response corrente (scala firmware)
+     * @param baseline   install baseline catturata a regime al setpoint (scala firmware, >0)
+     * @param setpointPpm concentrazione vera di riferimento (es. 50000)
+     */
+    public OptionalDouble impliedSetpointErrorPpm(double response, double baseline, double setpointPpm) {
+        OptionalDouble implied = ppmFromAnchoredResponse(response, baseline, setpointPpm);
+        return implied.isPresent()
+                ? OptionalDouble.of(implied.getAsDouble() - setpointPpm)
+                : OptionalDouble.empty();
     }
 }

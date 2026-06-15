@@ -54,6 +54,7 @@ public class AutoCalibrationService {
     private final double ewmaAlpha;
     private final double minHoursBetweenCmd;
     private final int verifySamples;
+    private final double maxDriftRatePctPerDay;
     private final AutoCalibrationPolicy.Config policyConfig;
 
     private final Map<Long, HubState> state = new ConcurrentHashMap<>();
@@ -73,7 +74,8 @@ public class AutoCalibrationService {
             @Value("${incusense.autocal.min-samples:20}") long minSamples,
             @Value("${incusense.autocal.min-hours-between-cmd:12}") double minHoursBetweenCmd,
             @Value("${incusense.autocal.max-offset-ppm:15000}") double maxOffsetPpm,
-            @Value("${incusense.autocal.verify-samples:10}") int verifySamples) {
+            @Value("${incusense.autocal.verify-samples:10}") int verifySamples,
+            @Value("${incusense.autocal.max-drift-rate-pct-per-day:3}") double maxDriftRatePctPerDay) {
         this.eventRepository = eventRepository;
         this.commandTransport = commandTransport;
         this.messagingTemplate = messagingTemplate;
@@ -85,6 +87,7 @@ public class AutoCalibrationService {
         this.ewmaAlpha = ewmaAlpha;
         this.minHoursBetweenCmd = minHoursBetweenCmd;
         this.verifySamples = verifySamples;
+        this.maxDriftRatePctPerDay = maxDriftRatePctPerDay;
         this.policyConfig = new AutoCalibrationPolicy.Config(
                 actionThresholdPct, eolThresholdPct, minSamples, maxOffsetPpm);
         if (enabled) {
@@ -133,7 +136,17 @@ public class AutoCalibrationService {
         CalibrationCurve curve = CalibrationCurve.fromJson(
                 health.getCurve() != null ? health.getCurve().getPointsJson() : null);
         double b = curve.isFitted() ? curve.exponentB() : 1.0; // fallback prudente: curva non assegnata
-        double impliedDeltaPpm = (driftEwmaPct / 100.0 / b) * setpointPpm;
+
+        // Stima dell'errore ppm implicato dal drift, ANCORATA alla baseline misurata al setpoint
+        // (esatta se la curva e' fittata: ppm = setpoint*(resp/install)^(1/b)); altrimenti primo ordine.
+        double impliedDeltaPpm = curve.isFitted()
+                ? curve.impliedSetpointErrorPpm(st.ewmaResponse, install, setpointPpm)
+                        .orElse((driftEwmaPct / 100.0 / b) * setpointPpm)
+                : (driftEwmaPct / 100.0 / b) * setpointPpm;
+
+        // Guard-rail di discriminazione drift vs guasto: rate di invecchiamento medio (%/giorno).
+        // Fail-open finche' non c'e' una base temporale minima (evita falsi blocchi a inizio vita).
+        boolean rateWithinDriftRegime = isRateWithinDriftRegime(health);
 
         boolean cooldownElapsed = st.lastCommandAt == null
                 || Duration.between(st.lastCommandAt, now).toSeconds() >= minHoursBetweenCmd * 3600.0;
@@ -142,7 +155,7 @@ public class AutoCalibrationService {
 
         AutoCalibrationPolicy.Inputs in = new AutoCalibrationPolicy.Inputs(
                 inputsSane, atRegime, health.getHealthStatus(), driftEwmaPct, st.ewmaCount,
-                cooldownElapsed, hasPending, impliedDeltaPpm);
+                cooldownElapsed, hasPending, impliedDeltaPpm, curve.isFitted(), rateWithinDriftRegime);
         AutoCalibrationPolicy.Decision d = AutoCalibrationPolicy.decide(policyConfig, in);
 
         switch (d.action()) {
@@ -195,6 +208,22 @@ public class AutoCalibrationService {
     private boolean isAtRegime(Measurement m) {
         return Math.abs(m.getCo2Ppm() - setpointPpm) <= setpointTolPpm
                 && Math.abs(m.getHeaterTemp() - heaterTargetC) <= heaterTolC;
+    }
+
+    /**
+     * Discriminazione drift (invecchiamento lento) vs anomalia/guasto: il rate medio di drift
+     * (%/giorno) rispetto alla baseline non deve superare {@code max-drift-rate-pct-per-day}.
+     * Fail-open finche' non c'e' una base temporale minima (1 h operativa), per evitare falsi
+     * blocchi a inizio vita; gli altri guard-rail (max-offset, cooldown, min-samples) proteggono.
+     */
+    private boolean isRateWithinDriftRegime(SensorHealth health) {
+        Double drift = health.getObservedDriftPct();
+        Double hours = health.getOperatingHours();
+        if (drift == null || hours == null || hours < 1.0) {
+            return true;
+        }
+        double ratePerDay = Math.abs(drift) / hours * 24.0;
+        return ratePerDay <= maxDriftRatePctPerDay;
     }
 
     private CalibrationEvent sendOffsetCal(SensingHub hub, HubState st, double driftPct,

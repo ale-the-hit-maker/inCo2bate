@@ -89,6 +89,9 @@ incusense:
     # da validare con i dataset reali (docs/AUTOCAL_dataset_spec.md).
     max-offset-ppm: ${AUTOCAL_MAX_OFFSET_PPM:15000}
     verify-samples: ${AUTOCAL_VERIFY_SAMPLES:10}            # campioni post-cal per VERIFIED/FAILED
+    # Discriminazione drift (invecchiamento, giorni/settimane) vs anomalia/guasto: oltre questo
+    # rate medio di drift (%/giorno) la variazione NON e' considerata drift -> nessuna auto-correzione.
+    max-drift-rate-pct-per-day: ${AUTOCAL_MAX_DRIFT_RATE_PCT_PER_DAY:3}
   demo:
     # Modalità demo per il pitch: abilita /api/demo/* (iniezione di telemetria
     # sintetica nel percorso reale → alert + email veri). Disattivare in produzione.

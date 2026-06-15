@@ -39,7 +39,9 @@ public final class AutoCalibrationPolicy {
             long sampleCount,
             boolean cooldownElapsed,
             boolean hasPendingCommand,
-            double impliedDeltaPpm) {
+            double impliedDeltaPpm,
+            boolean curveFitted,
+            boolean rateWithinDriftRegime) {
     }
 
     public record Decision(Action action, String reason) {
@@ -63,6 +65,11 @@ public final class AutoCalibrationPolicy {
         }
 
         // --- banda ACTIONABLE: applica i guard-rail ---
+        // Senza una curva fittata (esponente b / ancoraggio) la correzione non e' fondata:
+        // restiamo in sola advisory (l'operatore puo' correggere manualmente).
+        if (!in.curveFitted()) {
+            return new Decision(Action.NONE, "curva non assegnata/fittata: solo advisory, nessuna auto-correzione");
+        }
         if (in.sampleCount() < cfg.minSamples()) {
             return new Decision(Action.NONE, "campioni a regime insufficienti");
         }
@@ -71,6 +78,11 @@ public final class AutoCalibrationPolicy {
         }
         if (!in.cooldownElapsed()) {
             return new Decision(Action.NONE, "cooldown attivo");
+        }
+        // Discriminazione drift vs anomalia di processo/guasto: una variazione troppo rapida
+        // non e' invecchiamento del sensore (giorni/settimane) -> niente auto-correzione (Dataset B).
+        if (!in.rateWithinDriftRegime()) {
+            return new Decision(Action.SKIP, "variazione troppo rapida: probabile anomalia di processo/guasto, non drift");
         }
         if ("CRITICAL".equals(in.healthStatus())) {
             return new Decision(Action.SKIP, "salute sensore CRITICAL: correzione non sicura");

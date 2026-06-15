@@ -13,10 +13,10 @@ class AutoCalibrationPolicyTest {
     private static final AutoCalibrationPolicy.Config CFG =
             new AutoCalibrationPolicy.Config(5.0, 20.0, 20, 15000.0);
 
-    /** Caso "tutto ok, banda azionabile". */
+    /** Caso "tutto ok, banda azionabile" (curva fittata, rate nel regime drift). */
     private AutoCalibrationPolicy.Inputs base() {
         return new AutoCalibrationPolicy.Inputs(
-                true, true, "OK", 8.0, 30, true, false, 8000.0);
+                true, true, "OK", 8.0, 30, true, false, 8000.0, true, true);
     }
 
     private AutoCalibrationPolicy.Action act(AutoCalibrationPolicy.Inputs in) {
@@ -34,7 +34,9 @@ class AutoCalibrationPolicyTest {
                 n != null ? n : b.sampleCount(),
                 cool != null ? cool : b.cooldownElapsed(),
                 pending != null ? pending : b.hasPendingCommand(),
-                impl != null ? impl : b.impliedDeltaPpm());
+                impl != null ? impl : b.impliedDeltaPpm(),
+                b.curveFitted(),
+                b.rateWithinDriftRegime());
     }
 
     @Test
@@ -112,5 +114,21 @@ class AutoCalibrationPolicyTest {
     void eolBoundaryIsCritical() {
         assertEquals(AutoCalibrationPolicy.Action.CRITICAL_NOACTION,
                 act(with(base(), null, null, null, 20.0, null, null, null, null)));
+    }
+
+    @Test
+    void unfittedCurveStaysAdvisoryNoAutoCorrection() {
+        // banda azionabile ma nessuna curva assegnata -> solo advisory, niente comando
+        AutoCalibrationPolicy.Inputs in = new AutoCalibrationPolicy.Inputs(
+                true, true, "OK", 8.0, 30, true, false, 8000.0, false, true);
+        assertEquals(AutoCalibrationPolicy.Action.NONE, act(in));
+    }
+
+    @Test
+    void tooFastRateSkipsAsProcessAnomaly() {
+        // variazione troppo rapida -> probabile guasto/anomalia, non drift -> SKIP
+        AutoCalibrationPolicy.Inputs in = new AutoCalibrationPolicy.Inputs(
+                true, true, "OK", 8.0, 30, true, false, 8000.0, true, false);
+        assertEquals(AutoCalibrationPolicy.Action.SKIP, act(in));
     }
 }

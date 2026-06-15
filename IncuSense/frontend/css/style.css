@@ -929,6 +929,66 @@ tbody tr:last-child td { border-bottom: none; }
 .cal-events .ev-msg { color: var(--text); line-height: 1.4; }
 .cal-events-empty { color: var(--text-muted); font-size: 12px; padding: 8px 0; }
 
+/* ===================================================================
+   Separazione delle zone della dashboard + pannello "feature" (drift)
+   =================================================================== */
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 32px 2px 6px;
+}
+.section-divider:first-child { margin-top: 6px; }
+.section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(0, 200, 255, 0.30), transparent);
+}
+.section-divider-label {
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--text);
+  white-space: nowrap;
+}
+.section-divider-label .sd-accent { color: var(--accent); }
+
+/* Pannello in evidenza: il monitoraggio drift deve risaltare rispetto agli altri */
+.panel-feature {
+  border-color: rgba(0, 200, 255, 0.34);
+  box-shadow: 0 4px 28px rgba(0, 0, 0, 0.45),
+              0 0 26px rgba(0, 200, 255, 0.11),
+              0 0 0 1px rgba(0, 200, 255, 0.10) inset;
+}
+.panel-feature::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--accent), rgba(0, 200, 255, 0.08));
+  pointer-events: none;
+  z-index: 1;
+}
+.panel-feature .panel-title { color: var(--text-hi); font-size: 12px; }
+
+.subsection-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 22px 0 2px;
+}
+
+/* Drift meter piu' grande/leggibile dentro il pannello feature */
+.panel-feature .drift-meter { margin-top: 20px; }
+.panel-feature .drift-track { height: 16px; }
+.panel-feature .drift-meter-head { font-size: 12px; }
+#drift-meter-value { color: var(--text-hi); font-weight: 600; }
+
 /* Topbar nav links: stato attivo */
 .ghost-btn.active, a.ghost-btn.active {
   color: var(--accent);
@@ -998,3 +1058,68 @@ select:focus-visible, button:focus-visible, input:focus-visible {
   outline: 2px solid rgba(0, 200, 255, 0.35);
   outline-offset: 1px;
 }
+
+/* ===================================================================
+   Leggibilita' v3.2 — titoli e label leggermente piu' grandi
+   Override centralizzato: lo stile resta invariato, aumentano solo le
+   dimensioni dei testi (titoli/label) per una migliore leggibilita'.
+   =================================================================== */
+
+/* Separazione delle zone della dashboard piu' marcata */
+.section-divider        { margin: 40px 2px 12px; }
+.section-divider::after { height: 2px; background: linear-gradient(90deg, rgba(0,200,255,0.38), transparent); }
+.section-divider-label  { font-size: 14px; letter-spacing: 3.5px; color: var(--text-hi); }
+
+/* Titoli pannelli */
+.panel-title                    { font-size: 13.5px; }
+.panel-feature .panel-title     { font-size: 15px; }
+.panel-subtitle                 { font-size: 12.5px; }
+.subsection-title               { font-size: 12px; }
+
+/* Card metriche */
+.metric-label                   { font-size: 12px; }
+.metric-unit                    { font-size: 15px; }
+
+/* Tabelle */
+table                           { font-size: 13px; }
+th                              { font-size: 11px; }
+
+/* Salute & drift */
+.health-stat span               { font-size: 11px; }
+.health-stat strong             { font-size: 23px; }
+.health-badge                   { font-size: 11.5px; }
+.drift-meter-head               { font-size: 13px; }
+.panel-feature .drift-meter-head{ font-size: 14px; }
+.drift-legend                   { font-size: 11.5px; }
+.cal-events .ev-time            { font-size: 11px; }
+.cal-events .ev-msg,
+.cal-events-empty               { font-size: 13px; }
+.muted-note                     { font-size: 13px; }
+
+/* Alert di sistema */
+.alerts-list strong             { font-size: 11.5px; }
+.alerts-list span               { font-size: 13px; }
+.alerts-list small              { font-size: 11px; }
+
+/* Topbar */
+.brand-name                     { font-size: 15px; }
+.brand-sub                      { font-size: 11px; }
+.lab-banner                     { font-size: 12px; }
+.ghost-btn                      { font-size: 12px; }
+.demo-flag                      { font-size: 11px; }
+
+/* Demo / scenari */
+.scenario-label                 { font-size: 15px; }
+.scenario-desc                  { font-size: 13px; }
+.badge-level                    { font-size: 11px; }
+.demo-hero-text                 { font-size: 14px; }
+
+/* Login */
+.hero-tagline                   { font-size: 15px; }
+.hero-company                   { font-size: 13px; }
+.login-card-title               { font-size: 18px; }
+.login-card-sub                 { font-size: 13px; }
+.field-label                    { font-size: 12px; }
+.field input, .field select     { font-size: 14px; }
+.btn-submit                     { font-size: 14px; }
+.login-footer                   { font-size: 12px; }

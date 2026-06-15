@@ -113,7 +113,7 @@ medesimo percorso di ingestione** di un nodo fisico. Non altera né disattiva nu
 | Sovratemperatura | WARN | Temp ambiente > 38,5 °C |
 | Umidità bassa | INFO | Umidità < 80% |
 | Guasto alimentazione 12V | CRITICAL | Rail 12V fuori tolleranza → email critica |
-| Drift sensore | WARN | Alert di manutenzione predittiva |
+| Drift sensore (reale) | WARN | Inietta una lettura con risposta derivata (~12%): muove il drift meter, aggiorna lo stato salute (DEGRADING) e attiva la manutenzione predittiva |
 
 Il **Registro attivazioni** mostra in tempo reale cosa è stato iniettato; la
 dashboard e l'email si aggiornano come in produzione.
@@ -135,11 +135,15 @@ La sezione **Sensor Health & Drift** della dashboard mostra:
 - drift osservato rispetto alla baseline d'installazione,
 - ore di funzionamento e proiezione di fine vita (EOL),
 - una **barra di drift** 0 → 20% con zona d'azione (5%) e soglia EOL (20%),
-- il **feed eventi drift & calibrazione** (alert `SENSOR_DRIFT` e, in futuro,
-  gli eventi di correzione automatica).
+- il **feed eventi drift & calibrazione** (alert `SENSOR_DRIFT` ed eventi di
+  correzione automatica).
 
-L'auto-calibrazione semi-real-time (closed-loop verso il nodo) è in fase di
-progettazione: vedi `docs/AUTOCAL_v1_design.md` e `docs/AUTOCAL_dataset_spec.md`.
+L'auto-calibrazione semi-real-time (closed-loop verso il nodo) è **implementata e
+attiva** (`AUTOCAL_ENABLED=true`), con guard-rail di sicurezza: nessuna correzione
+senza curva assegnata/fittata + baseline a regime, e SKIP se la variazione è troppo
+rapida (anomalia/guasto). La *curva di stabilità* e la logica di individuazione del
+drift sono descritte in `docs/DRIFT_detection_finale.md`; design e dataset in
+`docs/AUTOCAL_v1_design.md` e `docs/AUTOCAL_dataset_spec.md`.
 
 ---
 
