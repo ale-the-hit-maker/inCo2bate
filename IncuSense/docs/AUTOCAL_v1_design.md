@@ -66,7 +66,7 @@ Additivo e **retrocompatibile**. Topic già definiti nel firmware:
 
 **Comando OFFSET_CAL** (backend pubblica):
 ```json
-{ "command": "OFFSET_CAL", "offset_ppm": <target_ppm>, "event_id": <long> }
+{ "command": "OFFSET_CAL", "offset_ppm": <additive_offset_ppm>, "offset_mode": "absolute_ppm", "event_id": <long> }
 ```
 **Comando ZERO_CAL**:
 ```json
@@ -78,12 +78,9 @@ Additivo e **retrocompatibile**. Topic già definiti nel firmware:
 ```
 
 ### ⚠️ Nota di semantica critica (da non sbagliare)
-Nel firmware attuale `OFFSET_CAL` interpreta `offset_ppm` come **concentrazione target nota**,
-non come delta: calcola internamente `correction = offset_ppm − co2ppm_letto_ora`.
-Quindi, con riferimento **auto-riferito**, il backend deve inviare come `offset_ppm` la sua
-**migliore stima della concentrazione "vera" corrente** (valore di riferimento dal modello baseline);
-il firmware ricava da solo il delta. Resta una piccola *race* temporale (il backend non conosce
-l'esatta lettura istantanea del nodo): mitigata da EWMA + verifica via ACK + controllo post-cal.
+`OFFSET_CAL` interpreta `offset_ppm` come **offset additivo assoluto in ppm**: la piattaforma
+calcola il delta, il firmware lo sostituisce all'offset precedente e lo applica alle letture
+successive. Il campo `offset_mode="absolute_ppm"` rende esplicita la semantica del contratto.
 
 `ZERO_CAL` invece ri-campiona la baseline in aria: **fisicamente valido solo se il sensore è
 realmente in aria pulita** in quell'istante (raro in un incubatore a setpoint CO₂). Da usare
@@ -137,23 +134,23 @@ periodici o ridondanza multi-sensore.
 
 ## 6. Change-set minimale e reversibile
 
-**Backend (nessuna modifica firmware nel happy path):**
+**Backend + firmware (contratto OFFSET_CAL esplicito):**
 1. `MqttConfig`: aggiungere un **outbound flow** (`MqttPahoMessageHandler` + canale) verso `commands`; estendere l'adapter inbound per sottoscrivere anche `.../ack`.
-2. `AutoCalibrationService` (nuovo): EWMA, bande, guard-rail, mapping drift→target ppm, cooldown, lifecycle eventi. Invocato da `DriftMonitoringService.update()` nella banda ACTIONABLE.
+2. `AutoCalibrationService` (nuovo): EWMA, bande, guard-rail, mapping drift→offset additivo ppm, cooldown, lifecycle eventi. Invocato da `DriftMonitoringService.update()` nella banda ACTIONABLE.
 3. `MqttIngestionService` / nuovo handler: gestione topic `.../ack` → aggiorna `CalibrationEvent`.
 4. Nuova entità + tabella `calibration_events` (id, hub, command, requested_offset_ppm, status `PENDING|ACKED|VERIFIED|FAILED|SKIPPED`, created_at, acked_at, verified_at) → **migrazione `V5__autocal.sql`**.
 5. DTO + endpoint controller: lista eventi calibrazione, trigger manuale, tuning soglie.
 6. `application.yml` + `docker-compose.yml`: proprietà `incusense.autocal.*` (soglie, cooldown, max offset, abilitazione).
 
-**Firmware:** *nessuna* nel happy path. Hardening **opzionale** (richiede ri-flash → da decidere a parte):
-- persistere `cal_offset_ppm` / `cal_air_baseline` su LittleFS (oggi si perdono al reboot);
-- idempotenza sull'`event_id` (ignora comando già applicato).
+**Firmware:** supporta `OFFSET_CAL` come offset additivo assoluto, persiste
+`cal_offset_ppm` / `cal_air_baseline` su LittleFS e ignora `event_id` gia' applicati.
 
 ## 7. Impatto su contratto e parco nodi (§6/§7)
 
 - Modifiche al contratto MQTT: **additive e retrocompatibili** (il firmware già le supporta).
 - **Migrazione DB `V5`**: tabella nuova, nessun impatto sui dati esistenti → *richiede conferma (stop-and-ask)*.
-- **Nessun ri-flash** richiesto per l'happy path. L'hardening firmware è opzionale e separato.
+- **Ri-flash richiesto** per i nodi che devono usare la nuova semantica `offset_ppm`
+  additiva e la persistenza dello stato di calibrazione.
 
 ## 8. Verifica (Fase 4)
 
@@ -167,5 +164,5 @@ periodici o ridondanza multi-sensore.
 
 1. **OK alla migrazione DB `V5__autocal.sql`** (tabella `calibration_events`).
 2. Valori iniziali guard-rail: `T_action` (es. 5%), `MAX_OFFSET_PPM` (es. 1000 ppm), `MAX_OFFSET_PPM_PER_DAY`, `MIN_HOURS_BETWEEN_CMD` (es. 12 h), `MIN_SAMPLES`.
-3. Confermi che nell'happy path vogliamo **OFFSET_CAL** (semantica target-ppm) e teniamo **ZERO_CAL** solo per finestre di aria pulita certe?
+3. Confermi che nell'happy path vogliamo **OFFSET_CAL** (semantica offset additivo assoluto) e teniamo **ZERO_CAL** solo per finestre di aria pulita certe?
 4. L'hardening firmware (persistenza stato + idempotenza) lo pianifichiamo **ora** (un ri-flash unico) o **dopo**?

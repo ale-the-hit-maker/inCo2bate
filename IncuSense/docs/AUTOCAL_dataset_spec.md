@@ -1,7 +1,7 @@
 # Dataset per la curva di riferimento — Specifica di acquisizione
 
 > Complemento di `AUTOCAL_v1_design.md` (§5.0 e §2). Definisce **quali dati sperimentali
-> servono** per popolare `drift_reference_curves` (oggi i coefficienti sono `null`) e per
+> servono** per validare e rifinire `drift_reference_curves` e per
 > permettere alla piattaforma di distinguere un **calo reale di CO₂** nell'incubatore da un
 > **drift del sensore** Na:In₂O₃.
 
@@ -27,10 +27,9 @@ variazione risposta a regime  >  MAX_DRIFT_RATE  (da Dataset B)   →  anomalia 
 variazione risposta a regime  ≤  MAX_DRIFT_RATE  e segno coerente →  candidato drift (autocal con guard-rail)
 ```
 
-⚠️ **Incompatibilità da sanare subito:** il seed attuale dichiara `valid_ppm: [250, 5000]`
-(range del paper Na:In₂O₃), ma l'incubatore opera a **30.000–50.000 ppm** (3–5% CO₂).
-Una power-law fittata a 250–5000 ppm **non è estrapolabile** a 50.000 ppm: il dataset va
-acquisito nel range operativo reale, setpoint incluso.
+**Stato seed attuale:** il DB distingue `experimental_ppm: [250, 5000]` (range dei paper)
+da `valid_ppm: [30000, 70000]` (range operativo incubatore). Il dataset va comunque acquisito
+nel range operativo reale, setpoint incluso, per validare l'intercetta assoluta a 50.000 ppm.
 
 ---
 
@@ -85,7 +84,7 @@ acquisito nel range operativo reale, setpoint incluso.
 {
   "model": "power_law",
   "a": <fit>, "b": <fit>, "r2": <fit>, "sigma_log": <fit>,
-  "valid_ppm": [400, 60000],
+  "valid_ppm": [30000, 70000],
   "ref_temp_c": 250,
   "ref_env": {"temp_c": 37, "rh_pct": 95},
   "hysteresis_pct": <max scarto up/down>,
@@ -106,8 +105,9 @@ della soglia EOL al 20%.
   riferimento** — aria pulita (400 ppm) e setpoint (50.000 ppm) — verificati dallo strumento
   certificato.
 - Cadenza: **1 misura/giorno** (minimo: 2/settimana), ciascuna = plateau + ≥30 campioni come nel Dataset A.
-- Durata: **≥ 7 settimane** (il seed cita `stability_weeks: 7`; il paper sul drift SnO₂ mostra
-  degradi su scale simili). Più lungo = stima del rate più affidabile.
+- Durata minima: **≥ 7 giorni** per confrontarsi con la stabilità documentata nei paper Na:In₂O₃;
+  raccomandata **≥ 4–7 settimane** per stimare un rate di invecchiamento utile alla manutenzione
+  predittiva. Più lungo = stima del rate più affidabile.
 - Il sensore tra una misura e l'altra deve restare **operativo nelle condizioni reali**
   (heater acceso, ambiente incubatore): il drift dipende dalle ore di funzionamento a caldo,
   non dal tempo di calendario.

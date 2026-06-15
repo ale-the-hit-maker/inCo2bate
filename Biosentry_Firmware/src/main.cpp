@@ -102,6 +102,7 @@
 #define PID_I_MAX          100.0f
 
 #define BACKLOG_FILE       "/backlog.jsonl"
+#define CAL_STATE_FILE     "/calibration.json"
 
 // ===================================================================
 // [ADATTATO] Calibrazione — ADC baseline per zero-cal e sensor_response
@@ -111,6 +112,11 @@
 //   Può essere aggiornato via ZERO_CAL command dal backend.
 // ===================================================================
 #define ADC_AIR_BASELINE   1380.0f
+#define CO2_SETPOINT_PPM   50000.0f
+#define CO2_VALID_MIN_PPM  30000.0f
+#define CO2_VALID_MAX_PPM  70000.0f
+#define CO2_REPORT_MAX_PPM 80000.0f
+#define MAX_CAL_OFFSET_PPM 15000.0f
 
 // ===================================================================
 // Strutture dati
@@ -178,6 +184,7 @@ static volatile bool  do_zero_cal      = false;
 static volatile bool  do_offset_cal    = false;
 static volatile float pending_offset   = 0.0f;
 static volatile long  pending_event_id = -1L;
+static volatile long  cal_last_event_id = -1L;
 
 // ===================================================================
 // Dichiarazioni forward
@@ -198,6 +205,8 @@ uint32_t currentEpochSeconds();
 // [ADATTATO] Nuove funzioni per il contratto IncuSense
 void mqttCallback(char *topic, byte *payload, unsigned int length);
 void publishAck(long eventId, const char *command, const char *status);
+void loadCalibrationState();
+void saveCalibrationState();
 
 // ===================================================================
 // Funzioni di rete e filesystem
@@ -323,7 +332,10 @@ bool connectMqtt() {
 //
 // Formato atteso del payload JSON (pubblicato da CalibrationService.java):
 //   ZERO_CAL:   {"command":"ZERO_CAL",  "event_id":42}
-//   OFFSET_CAL: {"command":"OFFSET_CAL","offset_ppm":250.0,"event_id":43}
+//   OFFSET_CAL: {"command":"OFFSET_CAL","offset_ppm":-250.0,"event_id":43}
+//
+// offset_ppm e' un offset additivo assoluto, calcolato dalla piattaforma
+// e applicato dal controllore firmware alle letture successive.
 //
 // NOTA ARCHITETTURALE: questo callback viene eseguito all'interno di
 // mqttClient.loop(), ovvero nel contesto di Task_NetworkAndFS.
@@ -355,7 +367,13 @@ void mqttCallback(char *topic, byte *rawPayload, unsigned int length) {
     ack.event_id = eventId;
     strlcpy(ack.status, "OK", sizeof(ack.status));
 
-    if (strcmp(cmd, "ZERO_CAL") == 0) {
+    if (eventId >= 0 && eventId == cal_last_event_id) {
+        // QoS1 puo' ritrasmettere un comando gia' applicato dopo una riconnessione:
+        // confermiamo l'ACK senza riapplicare la calibrazione.
+        strlcpy(ack.command, cmd, sizeof(ack.command));
+        Serial.printf("[CAL] Duplicate event_id=%ld ignored\n", eventId);
+
+    } else if (strcmp(cmd, "ZERO_CAL") == 0) {
         // [ADATTATO] Segnala a Task_Sensing di acquisire la baseline corrente
         // come nuovo punto zero (sensore in aria pulita)
         strlcpy(ack.command, "ZERO_CAL", sizeof(ack.command));
@@ -364,15 +382,20 @@ void mqttCallback(char *topic, byte *rawPayload, unsigned int length) {
         Serial.println("[CAL] ZERO_CAL scheduled");
 
     } else if (strcmp(cmd, "OFFSET_CAL") == 0) {
-        // [ADATTATO] Applica un offset di correzione in ppm.
-        // L'utente espone il sensore a un gas di riferimento a concentrazione
-        // nota (pending_offset) e il firmware calcola la correzione.
+        // [v2.3] Applica un offset additivo assoluto in ppm, calcolato dalla
+        // piattaforma. Il firmware non ricava piu' il delta da un target gas.
         float offsetPpm = doc["offset_ppm"] | 0.0f;
         strlcpy(ack.command, "OFFSET_CAL", sizeof(ack.command));
-        pending_offset   = offsetPpm;
-        pending_event_id = eventId;
-        do_offset_cal    = true;
-        Serial.printf("[CAL] OFFSET_CAL scheduled: target=%.1f ppm\n", offsetPpm);
+        if (!isfinite(offsetPpm) || fabsf(offsetPpm) > MAX_CAL_OFFSET_PPM) {
+            strlcpy(ack.status, "ERROR", sizeof(ack.status));
+            Serial.printf("[CAL] OFFSET_CAL rejected: offset=%.1f ppm max=%.1f ppm\n",
+                          offsetPpm, MAX_CAL_OFFSET_PPM);
+        } else {
+            pending_offset   = offsetPpm;
+            pending_event_id = eventId;
+            do_offset_cal    = true;
+            Serial.printf("[CAL] OFFSET_CAL scheduled: additive_offset=%.1f ppm\n", offsetPpm);
+        }
 
     } else {
         Serial.printf("[CMD] Unknown command: %s\n", cmd);
@@ -527,6 +550,56 @@ void publishStatus(const char *message) {
     mqttClient.publish(TOPIC_STATUS, buffer);
 }
 
+void loadCalibrationState() {
+    if (!LittleFS.exists(CAL_STATE_FILE)) {
+        return;
+    }
+    File file = LittleFS.open(CAL_STATE_FILE, FILE_READ);
+    if (!file) {
+        Serial.println("[CAL] State open failed");
+        return;
+    }
+
+    StaticJsonDocument<192> doc;
+    DeserializationError err = deserializeJson(doc, file);
+    file.close();
+    if (err) {
+        Serial.printf("[CAL] State parse error: %s\n", err.c_str());
+        return;
+    }
+
+    float baseline = doc["air_baseline_adc"] | ADC_AIR_BASELINE;
+    float offset   = doc["offset_ppm"] | 0.0f;
+    long eventId   = doc["last_event_id"] | -1L;
+
+    if (isfinite(baseline) && baseline > 0.0f && baseline < 4095.0f) {
+        cal_air_baseline = baseline;
+    }
+    if (isfinite(offset) && fabsf(offset) <= MAX_CAL_OFFSET_PPM) {
+        cal_offset_ppm = offset;
+    }
+    cal_last_event_id = eventId;
+
+    Serial.printf("[CAL] State loaded: baseline=%.1f offset=%.1f last_event=%ld\n",
+                  (float)cal_air_baseline, (float)cal_offset_ppm, cal_last_event_id);
+}
+
+void saveCalibrationState() {
+    StaticJsonDocument<192> doc;
+    doc["air_baseline_adc"] = (float)cal_air_baseline;
+    doc["offset_ppm"]       = (float)cal_offset_ppm;
+    doc["last_event_id"]    = (long)cal_last_event_id;
+
+    File file = LittleFS.open(CAL_STATE_FILE, FILE_WRITE);
+    if (!file) {
+        Serial.println("[CAL] State save failed");
+        return;
+    }
+    serializeJson(doc, file);
+    file.close();
+    Serial.println("[CAL] State saved");
+}
+
 uint32_t currentEpochSeconds() {
     time_t now = time(nullptr);
     if (now > 1000000000) {
@@ -593,14 +666,17 @@ void Task_ThermalControl(void *pvParameters) {
 
 // ── Task_Sensing  [ADATTATO: calibrazione + raw_adc + sensor_response] ──
 void Task_Sensing(void *pvParameters) {
-    // [v3.1] DATA MOCKING — riempimento incubatore realistico.
-    // La CO2 simulata parte dall'aria pulita (baseline ADC) e sale con
-    // andamento esponenziale del primo ordine fino a stabilizzarsi al
-    // setpoint dell'incubatore (5% = 50.000 ppm ≈ ADC 2115), con un
+    // [v3.2] DATA MOCKING — riempimento incubatore realistico.
+    // La CO2 simulata parte gia' vicino al regime (45.000 ppm) e sale con
+    // andamento esponenziale del primo ordine fino al setpoint incubatore
+    // (5% = 50.000 ppm ≈ ADC 2115), con un
     // piccolo rumore di misura sovrapposto (±3 LSB ≈ ±200 ppm).
     const float SIM_TARGET_ADC = 2115.0f;  // ≈ 50.000 ppm con baseline 1380
-    const float SIM_RISE_K     = 0.015f;   // costante di salita (~3-4 min a regime, 1 Hz)
-    static float sim_adc       = ADC_AIR_BASELINE; // parte da aria pulita (400 ppm)
+    const float SIM_START_PPM  = 45000.0f;
+    const float SIM_RISE_K     = 0.035f;   // partendo da 45k arriva a regime rapidamente
+    static float sim_adc       = ADC_AIR_BASELINE
+                                 + ((SIM_START_PPM - 400.0f) / (CO2_SETPOINT_PPM - 400.0f))
+                                 * (SIM_TARGET_ADC - ADC_AIR_BASELINE);
 
     while (1) {
         // -----------------------------------------------------------
@@ -622,10 +698,10 @@ void Task_Sensing(void *pvParameters) {
 
         if (avgTia > cal_air_baseline) {
             float delta_adc = 2115.0f - cal_air_baseline; // range ADC calibrato
-            float delta_ppm = 50000.0f - 400.0f;
+            float delta_ppm = CO2_SETPOINT_PPM - 400.0f;
             co2ppm = 400.0f + ((avgTia - cal_air_baseline) * (delta_ppm / delta_adc));
         }
-        co2ppm = constrain(co2ppm, 400.0f, 55000.0f);
+        co2ppm = constrain(co2ppm, 400.0f, CO2_REPORT_MAX_PPM);
 
         // -----------------------------------------------------------
         // 3. [ADATTATO] Applicazione calibrazione
@@ -634,32 +710,33 @@ void Task_Sensing(void *pvParameters) {
         //   in aria pulita. Azzera anche l'offset di correzione ppm.
         //   Deve avvenire quando il sensore è in aria senza CO2.
         //
-        // OFFSET_CAL: calcola e applica l'offset di correzione ppm.
-        //   L'utente espone il sensore a un gas di riferimento noto
-        //   (es. 5000 ppm). Il firmware calcola la differenza tra
-        //   il valore target e la lettura corrente e la memorizza
-        //   come offset da aggiungere alle misure successive.
+        // OFFSET_CAL: applica l'offset additivo assoluto calcolato dalla
+        // piattaforma (es. -320 ppm). Ogni comando sostituisce l'offset
+        // precedente e viene persistito su LittleFS.
         // -----------------------------------------------------------
         if (do_zero_cal) {
             Serial.printf("[CAL] ZERO_CAL applied: old_baseline=%.1f new_baseline=%.1f\n",
                           (float)cal_air_baseline, avgTia);
             cal_air_baseline = avgTia;
             cal_offset_ppm   = 0.0f;
+            cal_last_event_id = pending_event_id;
             do_zero_cal      = false;
+            saveCalibrationState();
             // co2ppm ricalcolata al prossimo ciclo con la nuova baseline
         }
 
         if (do_offset_cal) {
-            float correction = pending_offset - co2ppm;
-            Serial.printf("[CAL] OFFSET_CAL applied: current=%.1f target=%.1f offset=%.1f\n",
-                          co2ppm, (float)pending_offset, correction);
-            cal_offset_ppm = correction;
-            do_offset_cal  = false;
+            Serial.printf("[CAL] OFFSET_CAL applied: offset=%.1f ppm previous=%.1f ppm\n",
+                          (float)pending_offset, (float)cal_offset_ppm);
+            cal_offset_ppm   = pending_offset;
+            cal_last_event_id = pending_event_id;
+            do_offset_cal    = false;
+            saveCalibrationState();
         }
 
         // Applica l'offset di calibrazione alla lettura corrente
         co2ppm += cal_offset_ppm;
-        co2ppm = constrain(co2ppm, 0.0f, 60000.0f);
+        co2ppm = constrain(co2ppm, 0.0f, CO2_REPORT_MAX_PPM);
 
         // -----------------------------------------------------------
         // 4. [ADATTATO] Calcolo sensor_response
@@ -766,13 +843,13 @@ void Task_NetworkAndFS(void *pvParameters) {
 }
 
 // ===================================================================
-// setup  [ADATTATO: versione v2.2, creazione ackQueue]
+// setup  [ADATTATO: versione v2.3, creazione ackQueue]
 // ===================================================================
 void setup() {
     Serial.begin(115200);
     delay(1000);
-    // [ADATTATO] Versione bumped a v2.2 per tracciabilità del contratto MQTT
-    Serial.println("\n=== BioSentry Firmware v2.2 (IncuSense contract) ===");
+    // [ADATTATO] Versione bumped a v2.3 per offset additivo autocal
+    Serial.println("\n=== BioSentry Firmware v2.3 (IncuSense contract) ===");
     Serial.printf("[ID] hub_id=%s  device_id=%s\n", MQTT_HUB_ID, MQTT_DEVICE_ID);
     Serial.printf("[MQTT] measurements: %s\n", TOPIC_MEASUREMENTS);
     Serial.printf("[MQTT] commands:     %s\n", TOPIC_COMMANDS);
@@ -815,7 +892,10 @@ void setup() {
 
     bool fsMounted = LittleFS.begin(true, "/littlefs", 10, fs_label);
     if (!fsMounted) Serial.println("[FS] LittleFS mount failed");
-    else            Serial.println("[FS] LittleFS mounted successfully");
+    else {
+        Serial.println("[FS] LittleFS mounted successfully");
+        loadCalibrationState();
+    }
 
     // Network
     if (!connectNetwork()) {

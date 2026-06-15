@@ -7,7 +7,9 @@ e della policy di auto-calibrazione. E' il "port" fedele di:
 
 Coefficienti regressione (owner):  alpha=0.345 (+/-0.051), beta=0.254 (+/-0.019), R^2=0.98
 Mappatura scelta:  alpha = log10(a)  ->  a = 10^alpha = 2.2131 ;  b = beta = 0.254
-Modello:  response = a * ppm^b   (valido 250..5000 ppm; NON estrapolabile al setpoint 50k)
+Modello:  response = a * ppm^b
+Range operativo piattaforma: 30000..70000 ppm (incubatore 5% CO2 = 50k).
+Range sperimentale paper: 250..5000 ppm, mantenuto come metadata.
 
 Uso:  python3 scripts/autocal_verify.py
 """
@@ -15,7 +17,7 @@ import math
 
 ALPHA, BETA = 0.345, 0.254
 A, B = 10 ** ALPHA, BETA
-VALID = (250.0, 5000.0)
+VALID = (30000.0, 70000.0)
 EPS = 1e-9
 
 
@@ -70,18 +72,19 @@ def main():
     print(f"a = 10^alpha = {A:.4f}   b = beta = {B}")
 
     print("\n[1] round-trip ppm -> response -> ppm")
-    for ppm in (250, 400, 1000, 2500, 5000):
+    for ppm in (30000, 45000, 50000, 60000, 70000):
         r = ppm_to_resp(ppm)
         back = resp_to_ppm(r)
         good = back is not None and abs(back - ppm) < 1e-6
         ok &= good
         print(f"    ppm={ppm:>5}  resp={r:7.3f}  back={back:9.3f}  {'OK' if good else 'FAIL'}")
 
-    print("\n[2] niente estrapolazione fuori range")
-    for ppm in (249, 5001, 50000):
-        good = ppm_to_resp(ppm) is None
+    print("\n[2] range operativo incubatore")
+    for ppm, expected in ((29999, False), (50000, True), (70001, False)):
+        got = ppm_to_resp(ppm) is not None
+        good = got == expected
         ok &= good
-        print(f"    ppm_to_resp({ppm}) = None ? {'OK' if good else 'FAIL'}")
+        print(f"    ppm_to_resp({ppm}) in range ? {'OK' if good else 'FAIL'}")
 
     print("\n[3] bridge drift response -> errore ppm (usa solo b)")
     for d in (0.05, 0.10, 0.20):

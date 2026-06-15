@@ -24,9 +24,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Sorgente del drift: {@code sensor_response} auto-riferito (rispetto a installResponse),
  * mediato con EWMA sui soli campioni <b>a regime</b> (gating §5.0, anti-confondimento tra
  * drift del sensore e calo reale di CO2). In banda azionabile e dentro i guard-rail, pubblica
- * un comando {@code OFFSET_CAL} con {@code offset_ppm} = miglior stima della concentrazione
- * vera corrente (= setpoint dell'incubatore, controllato indipendentemente), il nodo ricava il
- * delta. L'esito e' tracciato come {@link CalibrationEvent} (PENDING->ACKED->VERIFIED|FAILED|SKIPPED).
+ * un comando {@code OFFSET_CAL} con {@code offset_ppm} = offset additivo in ppm calcolato dalla
+ * piattaforma; il nodo lo applica direttamente alle letture successive. L'esito e' tracciato come
+ * {@link CalibrationEvent} (PENDING->ACKED->VERIFIED|FAILED|SKIPPED).
  *
  * <p>Integrazione della curva di calibrazione: l'esponente {@code b=beta} (invariante di scala)
  * traduce il drift frazionale del response nell'errore frazionale di ppm
@@ -146,7 +146,7 @@ public class AutoCalibrationService {
         AutoCalibrationPolicy.Decision d = AutoCalibrationPolicy.decide(policyConfig, in);
 
         switch (d.action()) {
-            case COMMAND -> sendOffsetCal(hub, st, driftEwmaPct, now);
+            case COMMAND -> sendOffsetCal(hub, st, driftEwmaPct, setpointPpm - m.getCo2Ppm(), now);
             case SKIP -> recordSkip(hub, st, driftEwmaPct, d.reason(), now);
             default -> { /* NONE / CRITICAL_NOACTION: nessun evento (l'alert e' gestito dal drift monitor) */ }
         }
@@ -161,7 +161,8 @@ public class AutoCalibrationService {
             throw new IllegalStateException("Un comando di calibrazione e' gia' in corso per questo hub");
         }
         Double drift = (health != null) ? health.getObservedDriftPct() : null;
-        return sendOffsetCal(hub, st, drift != null ? drift : 0.0, Instant.now());
+        double additiveOffsetPpm = estimateManualOffsetPpm(health, drift);
+        return sendOffsetCal(hub, st, drift != null ? drift : 0.0, additiveOffsetPpm, Instant.now());
     }
 
     /** Gestione dell'ACK ricevuto dal nodo sul topic {@code .../ack}. */
@@ -196,16 +197,16 @@ public class AutoCalibrationService {
                 && Math.abs(m.getHeaterTemp() - heaterTargetC) <= heaterTolC;
     }
 
-    private CalibrationEvent sendOffsetCal(SensingHub hub, HubState st, double driftPct, Instant now) {
-        // Riferimento auto-riferito: la miglior stima della concentrazione vera corrente e' il
-        // setpoint (l'incubatore lo mantiene via controllo indipendente). Il nodo ricava il delta.
-        double target = setpointPpm;
+    private CalibrationEvent sendOffsetCal(SensingHub hub, HubState st, double driftPct,
+                                           double additiveOffsetPpm, Instant now) {
+        double offset = clamp(additiveOffsetPpm, -policyConfig.maxOffsetPpm(), policyConfig.maxOffsetPpm());
         CalibrationEvent ev = eventRepository.save(new CalibrationEvent(
-                hub, "OFFSET_CAL", "PENDING", target, driftPct, "auto: drift azionabile"));
+                hub, "OFFSET_CAL", "PENDING", offset, driftPct, "auto: drift azionabile"));
 
         String topic = String.format(COMMAND_TOPIC, labId(hub), hub.getHubKey());
         String json = String.format(Locale.US,
-                "{\"command\":\"OFFSET_CAL\",\"offset_ppm\":%.1f,\"event_id\":%d}", target, ev.getId());
+                "{\"command\":\"OFFSET_CAL\",\"offset_ppm\":%.1f,\"offset_mode\":\"absolute_ppm\",\"event_id\":%d}",
+                offset, ev.getId());
 
         boolean ok = commandTransport.publish(topic, json);
         if (!ok) {
@@ -214,12 +215,28 @@ public class AutoCalibrationService {
             eventRepository.save(ev);
             log.warn("[AUTOCAL] publish OFFSET_CAL fallita hub={} event={}", hub.getHubKey(), ev.getId());
         } else {
-            log.info("[AUTOCAL] OFFSET_CAL inviato hub={} event={} target={} ppm (drift={}%)",
-                    hub.getHubKey(), ev.getId(), target, String.format(Locale.US, "%.1f", driftPct));
+            log.info("[AUTOCAL] OFFSET_CAL inviato hub={} event={} offset={} ppm (drift={}%)",
+                    hub.getHubKey(), ev.getId(), String.format(Locale.US, "%.1f", offset),
+                    String.format(Locale.US, "%.1f", driftPct));
         }
         st.lastCommandAt = now;
         broadcast(ev);
         return ev;
+    }
+
+    private double estimateManualOffsetPpm(SensorHealth health, Double driftPct) {
+        if (health == null || driftPct == null) {
+            return 0.0;
+        }
+        CalibrationCurve curve = CalibrationCurve.fromJson(
+                health.getCurve() != null ? health.getCurve().getPointsJson() : null);
+        double b = curve.isFitted() ? curve.exponentB() : 1.0;
+        double impliedDeltaPpm = (driftPct / 100.0 / b) * setpointPpm;
+        return clamp(-impliedDeltaPpm, -policyConfig.maxOffsetPpm(), policyConfig.maxOffsetPpm());
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private void recordSkip(SensingHub hub, HubState st, double driftPct, String reason, Instant now) {

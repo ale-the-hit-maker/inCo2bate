@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "author": "BioSentry v2.2 (W5500 Ethernet + PoE)",
+  "author": "BioSentry v2.3 (W5500 Ethernet + PoE)",
   "editor": "wokwi",
   "parts": [
     { "type": "board-esp32-c3-devkitm-1", "id": "esp", "top": 0, "left": 0, "attrs": {} },

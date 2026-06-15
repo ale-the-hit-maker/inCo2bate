@@ -15,7 +15,8 @@ modello:   response = a · ppm^b      (⇔  log10(response) = alpha + beta·log1
 ```
 
 Popolata in `drift_reference_curves` (riga seed `NaIn2O3_CO2`) dalla migrazione **`V5__autocal.sql`**,
-con `r2`, le incertezze, e `valid_ppm = [250, 5000]`.
+con `r2`, le incertezze, `experimental_ppm = [250, 5000]` e `valid_ppm = [30000, 70000]`
+come range operativo incubatore attorno al setpoint 5% CO2 (50.000 ppm).
 
 ### Nota critica sulle unità (perché `a` NON si applica al response del firmware)
 - Il `sensor_response` del firmware è `|I_air − I| / I_air ∈ [0,1]`.
@@ -23,8 +24,9 @@ con `r2`, le incertezze, e `valid_ppm = [250, 5000]`.
 - **`b` (esponente) e la dispersione log-log sono invarianti di scala** → usabili comunque.
 - **`a` (intercetta) dipende dalla scala** → la piattaforma **non** converte il `sensor_response`
   grezzo in ppm con `a`. `CalibrationCurve.responseToPpm()` vale solo per input sulla scala della curva.
-- **Range:** la curva è valida 250–5000 ppm; l'incubatore opera a 30k–50k ppm → **non estrapolabile**.
-  `responseToPpm`/`ppmToResponse` ritornano vuoto fuori range (niente stime assurde al setpoint).
+- **Range:** i paper validano il materiale a 250–5000 ppm; la piattaforma usa come range operativo
+  30k–70k ppm perché l'applicazione è un incubatore a 5% CO2. Per autocal resta centrale `b`,
+  non l'intercetta `a` applicata al response grezzo.
 
 ### Come α/β entrano davvero nel meccanismo
 Il loop usa `b` per tradurre il **drift frazionale del response** (auto-riferito, adimensionale)
@@ -37,8 +39,8 @@ Con `b=0.254` e setpoint 50k il fattore amplifica (drift 5% ⇒ ~9 800 ppm): `ma
 
 `telemetry → DriftMonitoringService.update() → AutoCalibrationService.evaluate()`:
 EWMA del `sensor_response` **solo a regime** (gating §5.0) → bande **OK / ACTIONABLE / CRITICAL**
-→ guard-rail → pubblica **`OFFSET_CAL`** con `offset_ppm` = setpoint (miglior stima della
-concentrazione vera, mantenuta dall'incubatore) → il nodo ricava il delta e risponde **ACK** →
+→ guard-rail → pubblica **`OFFSET_CAL`** con `offset_ppm` = offset additivo assoluto calcolato
+dalla piattaforma → il nodo applica l'offset e risponde **ACK** →
 verifica post-cal su `co2_ppm` vs setpoint → **VERIFIED / FAILED**. Tutto tracciato in
 `calibration_events` (PENDING/ACKED/VERIFIED/FAILED/SKIPPED).
 
@@ -54,10 +56,11 @@ Modificati: `config/MqttConfig` (outbound `.../commands` + sub `.../ack`),
 `dto/Dtos` (+`CalibrationEventResponse`), `repository/Repositories` (+`CalibrationEventRepository`),
 `application.yml` (`incusense.autocal.*`, `mqtt.ack-topic`).
 
-**Firmware: nessuna modifica** (comandi/ACK già supportati) → **nessun ri-flash** nel happy path.
+**Firmware aggiornato**: `OFFSET_CAL` usa un offset additivo assoluto, lo persiste su LittleFS
+insieme alla baseline e ignora duplicati `event_id` già applicati.
 
 ## 4. Contratto MQTT (additivo, retrocompatibile)
-- `incusense/labs/{lab}/hubs/{hub}/commands` (backend→nodo): `{"command":"OFFSET_CAL","offset_ppm":<setpoint>,"event_id":<id>}`
+- `incusense/labs/{lab}/hubs/{hub}/commands` (backend→nodo): `{"command":"OFFSET_CAL","offset_ppm":<offset>,"offset_mode":"absolute_ppm","event_id":<id>}`
 - `incusense/labs/{lab}/hubs/{hub}/ack` (nodo→backend): `{"hub_id","command","status":"OK|ERROR","event_id","ts"}`
 
 ## 5. Abilitazione e test
@@ -72,9 +75,8 @@ Modificati: `config/MqttConfig` (outbound `.../commands` + sub `.../ack`),
 - **Non compilato in questa sessione** (toolchain JDK/Maven non disponibile qui): la matematica e la
   policy sono state verificate via port Python (tutti i check passano); restano da eseguire da parte
   tua `mvn test`, l'avvio del backend e l'E2E sul broker.
-- I coefficienti sono fittati su 250–5000 ppm: **non danno una ppm assoluta al setpoint incubatore**.
-  Il loop usa perciò il setpoint come riferimento (auto-riferito). Per una conversione assoluta nel
-  range operativo serve il **Dataset A** (`AUTOCAL_dataset_spec.md`).
+- I coefficienti paper sono fittati su 250–5000 ppm: nel range incubatore 30k–70k vanno validati
+  con Dataset A. Il loop usa quindi il setpoint e il drift auto-riferito, con `b` come ponte fisico.
 - `MAX_DRIFT_RATE` (discriminazione drift↔guasto, Dataset B) e la taratura fine di `max-offset-ppm`,
   `T_action`, `min-samples` richiedono i dati di invecchiamento reali.
 - **Firmware (osservazione di contratto, non modificato):** `sensor_response` è troncato a `[0,1]`;

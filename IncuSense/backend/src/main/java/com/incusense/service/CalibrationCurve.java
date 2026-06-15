@@ -11,7 +11,7 @@ import java.util.OptionalDouble;
  * (Na:In2O3), letta dal {@code points_json} di una {@code DriftReferenceCurve}.
  *
  * <p>Modello: {@code response = a * ppm^b}  &lt;=&gt;  {@code log10(response) = alpha + beta*log10(ppm)}.
- * Coefficienti dalla regressione lineare fornita dall'owner (vedi {@code V5__autocal.sql}):
+ * Coefficienti dalla regressione lineare fornita dall'owner (vedi {@code V6__incubator_autocal_finalization.sql}):
  * {@code alpha=0.345} (intercetta, base 10), {@code beta=0.254} (esponente), {@code R^2=0.98}.
  *
  * <h3>Nota critica sulle unita' (§6 del contratto)</h3>
@@ -24,8 +24,9 @@ import java.util.OptionalDouble;
  *       (rapporto di conduttanza ~4..13), <i>diversa</i> da quella del firmware. Percio'
  *       {@link #responseToPpm(double)} vale SOLO per input sulla scala della curva, e non va
  *       applicato al {@code sensor_response} grezzo del nodo.</li>
- *   <li>{@link #isInRangePpm(double)} riflette {@code valid_ppm=[250,5000]}: oltre il range la
- *       curva non e' estrapolabile (setpoint incubatore 30k-50k ppm).</li>
+ *   <li>{@link #isInRangePpm(double)} riflette il range operativo incubatore
+ *       {@code valid_ppm=[30000,70000]} attorno al setpoint 5% CO2 (50.000 ppm). Il range
+ *       sperimentale dei paper resta tracciato nel JSON come {@code experimental_ppm=[250,5000]}.</li>
  * </ul>
  */
 public final class CalibrationCurve {
@@ -121,7 +122,7 @@ public final class CalibrationCurve {
     /**
      * Concentrazione stimata da un response <b>sulla scala della curva</b> (paper), entro range.
      * Ritorna vuoto se la curva non e' fittata, l'input non e' positivo, o la ppm risultante
-     * cade fuori da {@code valid_ppm} (niente estrapolazione).
+     * cade fuori da {@code valid_ppm}.
      * NON usare con il sensor_response grezzo del firmware (scala diversa).
      */
     public OptionalDouble responseToPpm(double responseCurveScale) {
